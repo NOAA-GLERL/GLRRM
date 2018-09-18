@@ -5,7 +5,7 @@ title3: Used only to show how this might be done
 StartDate:  1980,  1,  1
 EndDate:    2010, 12, 31
 
-Output Directory: ex1/output/
+Output Directory: ./data/example/
 
 # initial Levels: 
 Sup Start Level   : 183.39 m 

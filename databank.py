@@ -121,6 +121,17 @@ class BaseMeta():
     #---------------------------------------------------
     #  For inputName() and outputName(), first collapse the index
     #  into the valid range, then access the tuple entry.
+    #  If called with no column specified, the default is to
+    #  return the first entry in the tuple (index 0).  If a
+    #  value is given for column, then that will be the index
+    #  used.  
+    #  For example, if self is an object of type DataUnits
+    #  and self.myValue is 3 (i.e. the units are meters), then
+    #   inputName() will return "m", then first entry in that tuple.
+    #   inputName(0) will return "m"
+    #   inputName(1) will return "meter"
+    #   inputName(2) will return "meters"
+    #   inputName(3) [or greater] will return "meters"
     #
     def inputName(self, column=0):
         try:
@@ -162,6 +173,11 @@ class BaseMeta():
     #  Method to convert a string into the index for that
     #  metadata value by finding the matching entry in _inputStrings.
     #  If unable to find any match, returns 0 (undefined).
+    #
+    #  For example, if self is an object of type DataUnits, and this
+    #  routine is passed the string "meters", this will return the
+    #  index value 3, because the set of names for "meters" is the
+    #  third tuple in the _inputStrings list.
     #
     def intValueFromString(self, string):
         j = -1
@@ -761,32 +777,6 @@ class DataSeries(object):
 class DataVault(object):
 
     #--------------------------------
-    #  Specify the coordinated lake surface areas, in sq meters
-    #  To be very clear, these are the lake areas only, and do not
-    #  include upstream channels.
-    #  Also, Lake Huron is the entire Lake Huron area, including Georgian Bay.
-    #--------------------------------
-    _coordLakeArea = (
-        ('su', 8.21e10),
-        ('mi', 5.78e10),
-        ('hu', 5.96e10),
-        ('sc', 1.11e09),
-        ('er', 2.57e10),
-        ('on', 1.90e10),
-        ('mh', 1.17e11),
-    )
-    def getLakeArea(self, loc=None):
-        if not loc: return None
-        try:
-            s = DataLocation(loc).primaryName().lower()
-            for t in self. _coordLakeArea:
-                if t[0].lower() == s: 
-                    return t[1]
-            return None
-        except:
-            return None
-    
-    #--------------------------------
     #  Specify the normalized units to use for each kind
     #--------------------------------
     _normalizedUnits = (
@@ -898,7 +888,7 @@ class DataVault(object):
         #  If user did not specify a lake area, then assign a value (if needed)
         #
         if not lake_area:
-            lake_area = self.getLakeArea(ds.dataLocation)
+            lake_area = util.getLakeArea(ds.dataLocation)
             
         #
         #  Create a "normalized" DataSeries object such that the data
@@ -917,13 +907,14 @@ class DataVault(object):
                     if ds.dataUnits != normstr:
                         oldstr = ds.dataUnits
                         oldvals = copy(ds.dataVals)
-                        
                         if (oldstr in util.linear_units) and normstr=='m': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr)
+                                    oldunits=oldstr, newunits=normstr, 
+                                    intvl=ds.dataInterval)
                         elif (oldstr in util.rate_units) and normstr=='cms': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr)
+                                    oldunits=oldstr, newunits=normstr, 
+                                    intvl=ds.dataInterval)
                         elif (oldstr in util.areal_units):
                             raise Exception('Error: datavault unable to store '
                                           + 'areal datasets.')
@@ -931,16 +922,17 @@ class DataVault(object):
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
                                     area=lake_area, first=ds.startDate, 
-                                    last=ds.endDate)
+                                    last=ds.endDate, intvl=ds.dataInterval)
                         elif normstr=='cms':
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
                                     area=lake_area, first=ds.startDate, 
-                                    last=ds.endDate)
+                                    last=ds.endDate, intvl=ds.dataInterval)
                         else:
                             print('ds.dataUnits=', ds.dataUnits)
                             print('normstr=', normstr)
                             raise Exception('Unhandled data units conversion.')
+
                 except:
                     raise Exception('Unable to do required data conversion.')
         except:
@@ -995,7 +987,12 @@ class DataVault(object):
             #
             #  No old dataset, so just add this new one to the vault.
             #
-            self.vault.update({key:tds})
+            try:
+                self.vault.update({key:tds})
+            except:
+                print('Error adding new dataset to vault')
+            
+            
 
     #---------------------------------------------------------------
     #  Equivalent to deposit, but with all fields individually specified.
@@ -1114,9 +1111,9 @@ class DataVault(object):
         #  period of record.
         #
         try:
-            lkarea = self.getLakeArea(tds.dataLocation)
+            lkarea = util.getLakeArea(tds.dataLocation)
             newvals = util.convertValues(values=trimvals,
-                    oldunits=tds.dataUnits, newunits=units, 
+                    oldunits=tds.dataUnits, newunits=du, 
                     intvl=tds.dataInterval, area=lkarea, 
                     first=newfirst, last=newlast)
             kstr = tds.dataKind;

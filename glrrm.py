@@ -43,40 +43,42 @@ def read_main_config(filename):
 
     with open(filename, "r") as f:
         for line in f:
-            s1 = line_for_parsing(line)
-            if s1.find('#') < 0:
-                p=parse1(s1)
-                if (p):
-                    if p[0].strip() == 'title1':
-                        title1 = p[1]
-                    elif p[0].strip() == 'title2':
-                        title2 = p[1]
-                    elif p[0].strip() == 'title3':
-                        title3 = p[1]
-                    elif p[0].strip() == 'startdate':
-                        print('Found start date: ', p[1])
-                        y,m,d = p[1].split(',')
-                        sdate = datetime.date(int(y), int(m), int(d))
-                    elif p[0].strip() == 'enddate':
-                        print('Found end date: ', p[1])
-                        y,m,d = p[1].split(',')
-                        edate = datetime.date(int(y), int(m), int(d))
-                    elif p[0].strip() == 'output directory':
-                        outdir = p[1].strip()
-                    elif p[0].strip() == 'sup start level':
-                        s = p[1].split()
-                        suplev = float(s[0])
-                    elif p[0].strip() == 'mhu start level':
-                        s = p[1].split()
-                        mhulev = float(s[0])
-                    elif p[0].strip() == 'st. c start level':
-                        s = p[1].split()
-                        stclev = float(s[0])
-                    elif p[0].strip() == 'eri start level':
-                        s = p[1].split()
-                        erilev = float(s[0])
-                else:
-                    print('parse1 failed')
+            s1 = line_for_parsing(line).strip()
+            if len(s1) > 0:
+                if s1.find('#') < 0:
+                    p=parse1(s1)
+                    if (p):
+                        if p[0].strip() == 'title1':
+                            title1 = p[1]
+                        elif p[0].strip() == 'title2':
+                            title2 = p[1]
+                        elif p[0].strip() == 'title3':
+                            title3 = p[1]
+                        elif p[0].strip() == 'startdate':
+                            print('Found start date: ', p[1])
+                            y,m,d = p[1].split(',')
+                            sdate = datetime.date(int(y), int(m), int(d))
+                        elif p[0].strip() == 'enddate':
+                            print('Found end date: ', p[1])
+                            y,m,d = p[1].split(',')
+                            edate = datetime.date(int(y), int(m), int(d))
+                        elif p[0].strip() == 'output directory':
+                            outdir = p[1].strip()
+                        elif p[0].strip() == 'sup start level':
+                            s = p[1].split()
+                            suplev = float(s[0])
+                        elif p[0].strip() == 'mhu start level':
+                            s = p[1].split()
+                            mhulev = float(s[0])
+                        elif p[0].strip() == 'st. c start level':
+                            s = p[1].split()
+                            stclev = float(s[0])
+                        elif p[0].strip() == 'eri start level':
+                            s = p[1].split()
+                            erilev = float(s[0])
+                    else:
+                        print('parse1 failed')
+                        print('  line=[' + s1 + ']') 
 
     return outdir, sdate, edate, suplev, mhulev, stclev, erilev
 
@@ -114,8 +116,181 @@ def parse1(line):
         return a,b
 
 
+#---------------------------------------------------------------------------------
+#  Given a start and end date, how many months are included?  Note that the 
+#  day is ignored.  Wouldn't want to do that in a real model, but this is just
+#  a quick and dirty example.
+#  Given the following values:
+#   sdate          edate          num_months
+#   2017-01-15     2017-01-15       1
+#   2017-01-15     2017-04-15       4
+#   2017-01-31     2017-01-01       1      # note this one well
+#   2017-01-15     2018-06-30       18
+#
+def number_of_months(sdate, edate):
+    sdtt = sdate.timetuple()
+    edtt = edate.timetuple()
+    sm = sdtt.tm_mon
+    sy = sdtt.tm_year
+    em = edtt.tm_mon
+    ey = edtt.tm_year
+    nm = (ey-sy)*12 + em - sm + 1
+    return nm
 
 
+
+#---------------------------------------------------------------------------------
+#  A nonsensical MONTHLY Lake Superior regulation
+#
+def silly_supreg(dvault, sdate, edate, sup_startlev):
+    #
+    #  Get nbs values for the entire period of interest.
+    #  Notice that we are getting the NBS values expressed in
+    #  units of meters over the lake surface.  Databank is
+    #  doing that conversion for us.
+    #
+    #  Note that nbs_sup is a full DataSeries object. The actual 
+    #  data values are accessible in nbs_sup.dataVals
+    #
+    nbs_sup = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='sup',
+                              first=sdate, last=edate)
+
+    num_months = number_of_months(sdate, edate)
+    
+    #
+    #  Create blank lists for the 3 timeseries we will create.
+    #  Daily Sup levels
+    #  Daily StMarys flows
+    #
+    suplevd = list(range(num_months+1))
+    smrflow = list(range(num_months+1))
+
+    slev_today = sup_startlev
+    for i in range(0, num_months):
+            
+        #
+        #  St Marys flow is computed by an extremely unrealistic
+        #  rule created by Tim for this demo. 
+        #
+        #  Assume a basic flow in the St. Marys River of 2100 cms.
+        #  If the nbs for Sup is more than that, increase the flow
+        #  by 1/2 of the excess.
+        #  If the nbs for Sup is less than that, decrease the flow
+        #  by 1/2 of the deficiency.
+        #  If the resulting level of Sup is > 183.80m or < 183.00m, then
+        #  adjust the flow to keep Superior levels within that range.
+        #
+        nbs = (nbs_sup.dataVals[i] * sup_area) / seconds_per_month     # convert to cms
+        smflow = 2100.0 + (nbs-2100)/2.0               # st mary's flow in cms
+        cis   = nbs - smflow/sup_area                  # change in storage for Sup, in cms
+        slevd = (cis * seconds_per_month) / sup_area   # sup level delta for today, meters
+        newlev = slev_today + slevd
+        if newlev > 183.80:
+            adj = (newlev - 183.8) * sup_area           # cubic meters
+            smflow = smflow + adj/seconds_per_month
+            newlev = 183.80
+        elif newlev < 183.00:
+            adj = (183.0 - newlev) * sup_area           # cubic meters
+            smflow = smflow - adj/seconds_per_month
+            newlev = 183.00
+            
+        suplevd[i] = newlev
+        smrflow[i] = smflow
+        slev_today = newlev
+        
+    #
+    #  Now store the suplevd and smrflow sequences in the vault.  Remember that
+    #  the deposit_data() method will build the DataSeries object using the specified
+    #  metadata and data values. If we had already built a DataSeries object we could 
+    #  use dvault.deposit() and pass it the DataSeries object.
+    #
+    dvault.deposit_data(kind='eomlev', units='meters', intvl='mon', loc='sup', 
+                     first=sdate, last=edate, values=suplevd)
+    dvault.deposit_data(kind='flow', units='cms', intvl='mon', loc='stmarys', 
+                     first=sdate, last=edate, values=smrflow)
+
+    return True
+
+#---------------------------------------------------------------------------------
+def silly_midlakes(dvault, sdate, edate, mhu_startlev, stc_startlev, eri_startlev):
+    nbs_mhu = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='mhu',
+                              first=sdate, last=edate)
+    nbs_stc = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='stc',
+                              first=sdate, last=edate)
+    nbs_eri = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='eri',
+                              first=sdate, last=edate)
+    smrflow = dvault.withdraw(kind='flow', units='cms', intvl='mon', loc='smr',
+                              first=sdate, last=edate)
+                              
+    num_months = number_of_months(sdate, edate)
+    
+    #
+    #  Create blank lists for the timeseries we will create.
+    #  Daily lake levels
+    #  Daily river flows
+    #
+    mhulevd = [None] * (num_months+1)
+    stcflow = [None] * (num_months+1)
+    
+    mlev_today = mhu_startlev
+    slev_today = stc_startlev
+    for i in range(0, num_months):
+        
+        #
+        #  Now determine what the result would be for Mhu levels, using
+        #  that St. Marys flow along with the Mhu nbs.
+        #
+        smrf = smrflow.dataVals[i]
+        mnbs = nbs_mhu.dataVals[i]
+        mhu_cms = smrf + (mnbs*mhu_area / seconds_per_month)     # total supply in cms
+        
+        #  Assume a basic flow in the St. Clair River of 5100 cms.
+        #  If mhu_cms is more than that, increase the flow by 1/2 of the excess.
+        #  If mhu_cms is less than that, decrease the flow by 1/2 of the deficiency.
+        #  If the resulting level of Mhu is > 177.50m or < 175.50m, then
+        #  simply adjust the level to stay in range.
+        #
+        scflow = 5100.0 + (mhu_cms-5100)/2.0
+        mlevd = (mhu_cms * seconds_per_month) / mhu_area    # mhu level delta for today, meters
+        newlev = mlev_today + mlevd
+        if newlev > 177.50:
+            adj = (newlev - 177.5) * mhu_area           # cubic meters
+            scflow = scflow + adj/seconds_per_month
+            newlev = 177.50
+        elif newlev < 175.50:
+            adj = (175.5 - newlev) * sup_area           # cubic meters
+            scflow = scflow - adj/seconds_per_month
+            newlev = 183.00
+        mhulevd[i] = newlev
+        mlev_today = newlev
+        stcflow[i] = scflow
+        
+        
+        #  At this point, Midlakes should compute:
+        #    Lake StClair level,
+        #    Detroit River flow,
+        #    Lake Erie level
+        #    Niagara River flow
+        #  But I'm gonna skip that for now, because this is all just
+        #  ridiculous calculation for the sole purpose of illustrating how
+        #  databank would be used.  No need to do those for this purpose.
+        #  
+        
+        
+    #
+    #  Store the MH level and St Clair river flow sequences in the vault.  Remember that
+    #  the deposit_data() method will build the DataSeries object using the specified
+    #  metadata and data values. If we had already built a DataSeries object we could 
+    #  use dvault.deposit() and pass it the DataSeries object.
+    #
+    dvault.deposit_data(kind='eomlev', units='meters', intvl='mon', loc='mhu', 
+                     first=sdate, last=edate, values=mhulevd)
+    dvault.deposit_data(kind='flow', units='cms', intvl='mon', loc='stcriver', 
+                     first=sdate, last=edate, values=stcflow)
+
+    return True
+
+        
 #--------------------------------------------------------------------------------
 #
 #  Create the data repository object.  This will persist
@@ -155,16 +330,20 @@ erilev      = maincfg[6]
 #  at this stage, because the databank will normalize things internally
 #  and I can specify the units I need when I retrieve the data.
 #
-nbs = databank_io.read_file('data/example/nbs_sup.txt')
+#  Here I am reading files that have the data in mm for the first 3 
+#  lakes, and cms for Erie. This is largely to illustrate/prove that
+#  this works.
+#
+nbs = databank_io.read_file('data/example/nbs_sup_mm.txt')
 the_vault.deposit(nbs)
 
-nbs = databank_io.read_file('data/example/nbs_mhu.txt')
+nbs = databank_io.read_file('data/example/nbs_mhu_mm.txt')
 the_vault.deposit(nbs)
 
-nbs = databank_io.read_file('data/example/nbs_stc.txt')
+nbs = databank_io.read_file('data/example/nbs_stc_mm.txt')
 the_vault.deposit(nbs)
 
-nbs = databank_io.read_file('data/example/nbs_eri.txt')
+nbs = databank_io.read_file('data/example/nbs_eri_cms.txt')
 the_vault.deposit(nbs)
 
 #
@@ -185,6 +364,7 @@ if nbs.startDate > data_start:
 if nbs.endDate < data_end:
     data_end = nbs.endDate
 
+    
 nbs = the_vault.withdraw(kind='nbs', units='cfs', intvl='mon', loc='mhu')
 if nbs.startDate > data_start:
     data_start = nbs.startDate
@@ -198,7 +378,7 @@ if nbs.startDate > data_start:
 if nbs.endDate < data_end:
     data_end = nbs.endDate
 
-
+    
 nbs = the_vault.withdraw(kind='nbs', units='cfs', intvl='mon', loc='eri')
 if nbs.startDate > data_start:
     data_start = nbs.startDate
@@ -209,12 +389,12 @@ if nbs.endDate < data_end:
 #  Do I have sufficient data stored to run my model for the period that
 #  was specified in the config file?
 #
-if model_start < data_start:
+if model_sdate < data_start:
     print('Insufficient data to run the model.')
     print('Data in files starts too late.')
     sys.exit(1)
 
-if model_end > data_end:
+if model_edate > data_end:
     print('Insufficient data to run the model.')
     print('Data in files ends too soon.')
     sys.exit(1)
@@ -227,138 +407,41 @@ if model_end > data_end:
 #  I am simply passing to them the required period of record
 #  and starting levels.
 #
-ok = silly_supreg(the_vault, model_start, model_end, suplev)
-if !ok:
+print('run silly_supreg')
+ok = silly_supreg(the_vault, model_sdate, model_edate, suplev)
+if not ok:
     print('Error in the Superior regulation model')
     sys.exit(1)
 
-ok = silly_midlakes(the_vault, model_start, model_end, mhulev, stclev, erilev)
-if !ok:
+print('run silly_midlakes')
+ok = silly_midlakes(the_vault, model_sdate, model_edate, mhulev, stclev, erilev)
+if not ok:
     print('Error in the middle lakes model')
     sys.exit(1)
 
-
-
-def silly_supreg(dvault, sdate, edate, sup_startlev):
-    #
-    #  Get nbs values for the entire period of interest.
-    #  Notice that we are getting the NBS values expressed in
-    #  units of meters over the lake surface.  Databank is
-    #  doing that conversion for us.
-    #
-    nbs_sup = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='sup',
-                              first=model_start, last=model_end)
-    delta = edate - sdate
+print('output timeseries data into files')
+ds = the_vault.withdraw(kind='eomlev', units='meters', intvl='mon', loc='sup', 
+                     first=model_sdate, last=model_edate)
+fileout = outdir+'suplev_test.txt'
+databank_io.write_file(filename=fileout, file_format="table",
+                    dataseries=ds, overwrite=True)
+                    
+ds = the_vault.withdraw(kind='eomlev', units='meters', intvl='mon', loc='mhu', 
+                     first=model_sdate, last=model_edate)
+fileout = outdir+'mhulev_test.txt'
+databank_io.write_file(filename=fileout, file_format="table",
+                    dataseries=ds, overwrite=True)
+                    
+ds = the_vault.withdraw(kind='flow', units='cms', intvl='mon', loc='stmarys', 
+                     first=model_sdate, last=model_edate)
+fileout = outdir+'smrflow_test.txt'
+databank_io.write_file(filename=fileout, file_format="table",
+                    dataseries=ds, overwrite=True)
+                    
+ds = the_vault.withdraw(kind='flow', units='cms', intvl='mon', loc='stcriver', 
+                     first=model_sdate, last=model_edate)
+fileout = outdir+'stcflow_test.txt'
+databank_io.write_file(filename=fileout, file_format="table",
+                    dataseries=ds, overwrite=True)
     
-    #
-    #  Create blank lists for the 3 timeseries we will create.
-    #  Daily Sup levels
-    #  Daily StMarys flows
-    #
-    suplevd = [None] * (delta.months+1)
-    smrflow = [None] * (delta.months+1)
-
-    slev_today = sup_startlev
-    for i in range(0, delta.months+1):
-        thisDay = sdate + datetime.timedelta(i)
-
-        #
-        #  St Marys flow is computed by an extremely unrealistic
-        #  rule created by Tim for this demo. 
-        #
-        #  Assume a basic flow in the St. Marys River of 2100 cms.
-        #  If the nbs for Sup is more than that, increase the flow
-        #  by 1/2 of the excess.
-        #  If the nbs for Sup is less than that, decrease the flow
-        #  by 1/2 of the deficiency.
-        #  If the resulting level of Sup is > 183.80m or < 183.00m, then
-        #  adjust the flow to keep Superior levels within that range.
-        #
-        sfnbs = (nbs_sup[i] * sup_area) / seconds_per_month      # cubic meters per second
-        smflow = 2100.0 + (sfnbs-2100)/2.0
-        sup_ts = sfnbs - smflow/sup_area
-        slevd = sup_ts / sup_area                       # sup level delta for today
-        newlev = slev_today + slevd
-        if newlev > 183.80:
-            adj = (newlev - 183.8) * sup_area           # cubic meters
-            smflow = smflow + adj/seconds_per_month
-            newlev = 183.80
-        elif newlev < 183.00:
-            adj = (183.0 - newlev) * sup_area           # cubic meters
-            smflow = smflow - adj/seconds_per_month
-            newlev = 183.00
-            
-        suplevd[i] = newlev
-        smrflow[i] = smflow
-        slev_today = newlev
-        
-    #
-    #  Now store the suplevd and smrflow sequences in the vault
-    #
-    dvault.deposit_data(kind='level', units='meters', intvl='mon', loc='sup', 
-                     first=sdate, last=edate, values=suplevd):
-    dvault.deposit_data(kind='flow', units='cms', intvl='mon', loc='stmarys', 
-                     first=sdate, last=edate, values=smrflow):
-
-
-def silly_midlakes(dvault, sdate, edate, mhu_startlev, stc_startlev, eri_startlev):
-    nbs_mhu = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='mhu',
-                              first=sdate, last=edate)
-    nbs_stc = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='stc',
-                              first=sdate, last=edate)
-    nbs_eri = dvault.withdraw(kind='nbs', units='meters', intvl='mon', loc='eri',
-                              first=sdate, last=edate)
-    smrflow = dvault.withdraw(kind='flow', units='cms', intvl='mon', loc='smr',
-                              first=sdate, last=edate)
-                              
-
-    delta = edate - sdate
-    
-    #
-    #  Create blank lists for the 3 timeseries we will create.
-    #  Daily lake levels
-    #  Daily river flows
-    #
-    mhulevd = [None] * (delta.months+1)
-    stclevd = [None] * (delta.months+1)
-    erilevd = [None] * (delta.months+1)
-    stcflow = [None] * (delta.months+1)
-    detflow = [None] * (delta.months+1)
-
-    mlev_today = mhu_startlev
-    slev_today = stc_startlev
-    elev_today = eri_startlev
-    for i in range(0, delta.months+1):
-        thisDay = sdate + datetime.timedelta(i)
-
-        
-        #
-        #  Now determine what the result would be for Mhu levels, using
-        #  that St. Marys flow along with the Mhu nbs.
-        #  
-        mhu_cms = smflow + (nbs_mhu[i]*mhu_area / seconds_per_month)     # total supply in cms
-        
-        #  Assume a basic flow in the St. Clair River of 5100 cms.
-        #  If mhu_cms is more than that, increase the flow by 1/2 of the excess.
-        #  If mhu_cms is less than that, decrease the flow by 1/2 of the deficiency.
-        #  If the resulting level of Mhu is > 177.50m or < 175.50m, then
-        #  simply adjust the level to stay in range.
-        #
-        scflow = 5100.0 + (mhu_cms-5100)/2.0
-        mlevd = mhu_ts / mhu_area                       # mhu level delta for today
-        newlev = mlev_today + mlevd
-        if newlev > 177.50:
-            adj = (newlev - 177.5) * mhu_area           # cubic meters
-            scflow = scflow + adj/seconds_per_month
-            newlev = 177.50
-        elif newlev < 175.50:
-            adj = (175.5 - newlev) * sup_area           # cubic meters
-            scflow = scflow - adj/seconds_per_month
-            newlev = 183.00
-        mhulevd[i] = newlev
-
-
-
-
-
 
