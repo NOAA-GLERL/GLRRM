@@ -55,7 +55,6 @@ qtr_month_start_end_days = (
 #  Some useful utility functions
 #-------------------------------------------------------------------------------
 #
-
 #--------------------------------------------------------------------
 def getLakeArea(loc=None):
     if not loc: return None
@@ -188,6 +187,74 @@ def getQtrMonthStartEnd(year=None, month=None, qtr=None):
     except:
         raise Exception('Error finding start/end of a qtr-month')
 
+#-------------------------------------------------------
+#  values = list of data values
+#           Any value < -9.9e20 is considered "missing"
+#  oldstart = starting date for the old data list
+#  oldend   = ending date for the old data list
+#  newstart = starting date for the result data list
+#  newend   = ending date for the result data list
+#  intvl    = interval of the data.  Must be one of the following:
+#             ['dy', 'wk', 'qm', 'mn']
+#
+#  The dates must have already been verified to be set such that
+#  oldstart <= newstart  and  newend <= oldend.
+#-------------------------------------------------------
+def trimDataValues(values=None, oldstart=None, oldend=None,
+                newstart=None, newend=None, intvl=None):
+    if not values:   return None
+    if not oldstart: return None
+    if not oldend:   return None
+    if not newstart: return None
+    if not newend:   return None
+    if not intvl:    return None
+    
+    #
+    #  Transform (if needed) dates into datetime.date objects
+    #
+    try:
+        olds = date_from_entry(oldstart)
+        olde = date_from_entry(oldend)
+        news = date_from_entry(newstart)
+        newe = date_from_entry(newend)
+    except:
+        raise Exception('Invalid date specification for trimDataValues()')
+
+    ok = True
+    if olds == MISSING_DATE:  ok = False
+    if olde == MISSING_DATE:  ok = False
+    if news == MISSING_DATE:  ok = False
+    if newe == MISSING_DATE:  ok = False
+    if not ok:
+        raise Exception('Invalid date specification for trimDataValues()')
+
+    #
+    #  Transform interval spec into the primary name
+    #
+    ok = False
+    if intvl.lower()=='dy':  ok = True
+    if intvl.lower()=='wk':  ok = True
+    if intvl.lower()=='qm':  ok = True
+    if intvl.lower()=='mn':  ok = True
+    if not ok:
+        raise Exception('Invalid interval specified to trimDataValues()')
+    
+    #
+    if intvl.lower()=='dy':
+        # index of start/end days
+        d1 = (news-olds).days
+        d2 = (newe-olds).days
+        return values[d1:d2]
+        
+    if intvl.lower()=='mn':
+        # index of start/end months
+        y = news.year - olds.year
+        m = news.month - olds.month
+        m1 = y*12 + m
+        y = newe.year - olds.year
+        m = newe.month - olds.month
+        m2 = y*12 + m + 1
+        return values[m1:m2]
 
 #-------------------------------------------------------
 #  value = data value to be converted
@@ -282,6 +349,90 @@ def valueRateToCubic(value=None, oldu=None, newu=None, secs=None):
     except:
         raise Exception('Unable to convert ' + oldu + '->' + newu)
 
+#--------------------------------------------------------------------
+#  oldunits, newunits must be specified as strings, and must have a matching
+#  entry in the tuples defined at the top.
+#--------------------------------------------------------------------
+def convertValues(values=None, oldunits=None, newunits=None, 
+                  area=None, intvl=None, first=None, last=None):
+    if not values:   return None
+    if not oldunits: return None
+    if not newunits: return None
+        
+    if not isinstance(oldunits, str):
+        raise Exception('Invalid oldunits specification in convertValues.')
+    if not isinstance(newunits, str):
+        raise Exception('Invalid newunits specification in convertValues.')
+
+    #
+    #  If the conversion is within the same kind of units, we can
+    #  do it directly.
+    #
+    try:
+        if (oldunits in linear_units) and (newunits in linear_units):
+            return linearConvert(values, oldunits, newunits)
+        elif (oldunits in areal_units) and (newunits in areal_units):
+            return arealConvert(values, oldunits, newunits)
+        elif (oldunits in cubic_units) and (newunits in cubic_units):
+            return cubicConvert(values, oldunits, newunits)
+        elif (oldunits in rate_units) and (newunits in rate_units):
+            return rateConvert(values, oldunits, newunits)
+    except:
+        raise Exception('Error converting ' + oldunits
+                  + ' to ' + newunits)
+    
+    #
+    #  If the conversion request is cross-group (e.g. cm -> cms)
+    #  then we need to do it in two steps.
+    #  Note that this is only valid to/from rate units.  Conversion
+    #  from, for example, cm -> ft3 makes no sense.
+    #     linear  ->  meters
+    #     areal   ->  invalid
+    #                 area <> rate doesn't work
+    #     cubic   ->  cubic meters
+    #     rate    ->  cubic meters per second
+    #
+    #  We require the number of seconds in all cases.
+    #  If we are converting linear <-> rate, we also need the area.
+    #  If we are doing cubic <-> rate, we do not need area.
+    #
+    #  If doing daily or weekly we could process every value with
+    #  the same conversion factors, but in the general case each 
+    #  value must be computed independently because the number
+    #  of seconds will vary (e.g. February != June).  That will
+    #  be handled in the routines called from this section of code.
+    #
+    #  We require the start/end dates for data intervals greater than
+    #  weekly, because we have to compute the number of days for each
+    #  value.
+    #
+    if not intvl: return None
+    if not area:  return None
+    if (intvl == 'qm') or (intvl == 'mn') or (intvl == 'yr'):
+        if not first: return None
+        if not last:  return None
+
+    try:
+        if (oldunits in linear_units) and (newunits in rate_units):
+            return linearToRate(values=values, oldu=oldunits, newu=newunits, 
+                   area=area, intvl=intvl, first=first, last=last)
+        elif (oldunits in cubic_units) and (newunits in rate_units):
+            return cubicToRate(values=values, oldu=oldunits, newu=newunits, 
+                   intvl=intvl, first=first, last=last)
+        elif (oldunits in rate_units) and (newunits in linear_units):
+            return rateToLinear(values=values, oldu=oldunits, newu=newunits,
+                   area=area, intvl=intvl, first=first, last=last)
+        elif (oldunits in rate_units) and (newunits in cubic_units):
+            return rateToCubic(values=values, oldu=oldunits, newu=newunits, 
+                   intvl=intvl, first=first, last=last)
+    except:
+        raise Exception('Error converting ' + oldunits
+                  + ' to ' + newunits)
+         
+    raise Exception('Invalid conversion specified; ' + oldunits
+                  + ' to ' + newunits)
+         
+         
 #-------------------------------------------------------
 #  values = list of data values
 #           Any value < -9.9e20 is considered "missing"
@@ -473,74 +624,6 @@ def rateConvert(values=None, oldstr=None, newstr=None):
     except:
         raise Exception('Error converting ' + oldstr + '->' + newstr)
 
-#-------------------------------------------------------
-#  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
-#  oldstart = starting date for the old data list
-#  oldend   = ending date for the old data list
-#  newstart = starting date for the result data list
-#  newend   = ending date for the result data list
-#  intvl    = interval of the data.  Must be one of the following:
-#             ['dy', 'wk', 'qm', 'mn']
-#
-#  The dates must have already been verified to be set such that
-#  oldstart <= newstart  and  newend <= oldend.
-#-------------------------------------------------------
-def trimDataValues(values=None, oldstart=None, oldend=None,
-                newstart=None, newend=None, intvl=None):
-    if not values:   return None
-    if not oldstart: return None
-    if not oldend:   return None
-    if not newstart: return None
-    if not newend:   return None
-    if not intvl:    return None
-    
-    #
-    #  Transform (if needed) dates into datetime.date objects
-    #
-    try:
-        olds = date_from_entry(oldstart)
-        olde = date_from_entry(oldend)
-        news = date_from_entry(newstart)
-        newe = date_from_entry(newend)
-    except:
-        raise Exception('Invalid date specification for trimDataValues()')
-
-    ok = True
-    if olds == MISSING_DATE:  ok = False
-    if olde == MISSING_DATE:  ok = False
-    if news == MISSING_DATE:  ok = False
-    if newe == MISSING_DATE:  ok = False
-    if not ok:
-        raise Exception('Invalid date specification for trimDataValues()')
-
-    #
-    #  Transform interval spec into the primary name
-    #
-    ok = False
-    if intvl.lower()=='dy':  ok = True
-    if intvl.lower()=='wk':  ok = True
-    if intvl.lower()=='qm':  ok = True
-    if intvl.lower()=='mn':  ok = True
-    if not ok:
-        raise Exception('Invalid interval specified to trimDataValues()')
-    
-    #
-    if intvl.lower()=='dy':
-        # index of start/end days
-        d1 = (news-olds).days
-        d2 = (newe-olds).days
-        return values[d1:d2]
-        
-    if intvl.lower()=='mn':
-        # index of start/end months
-        y = news.year - olds.year
-        m = news.month - olds.month
-        m1 = y*12 + m
-        y = newe.year - olds.year
-        m = newe.month - olds.month
-        m2 = y*12 + m + 1
-        return values[m1:m2]
 
 #-------------------------------------------------------
 #  values = list of data values to be converted
@@ -819,31 +902,27 @@ def convertValues(values=None, oldunits=None, newunits=None,
     #
     if not intvl: 
         print('Error: A unit conversion operation needed the time interval, but none was given.')
-        raise Exception('Error converting ' + oldunits
-                  + ' to ' + newunits)
+        raise Exception('Error converting ' + oldunits + ' to ' + newunits)
+                  
     if (intvl == 'qm') or (intvl == 'mn') or (intvl == 'yr'):
         if not first: 
             print('Error: Unit conversion needed start date, but none was given.')
-            raise Exception('Error converting ' + oldunits
-                      + ' to ' + newunits)
+            raise Exception('Error converting ' + oldunits + ' to ' + newunits)
         if not last:  
             print('Error: Unit conversion needed end date, but none was given.')
-            raise Exception('Error converting ' + oldunits
-                      + ' to ' + newunits)
+            raise Exception('Error converting ' + oldunits + ' to ' + newunits)
 
     try:
         if (oldunits in linear_units) and (newunits in rate_units):
             if not area:
                 print('Error: A unit conversion operation needed the area, but none was given.')
-                raise Exception('Error converting ' + oldunits
-                          + ' to ' + newunits)
+                raise Exception('Error converting ' + oldunits + ' to ' + newunits)
             return linearToRate(values=values, oldu=oldunits, newu=newunits, 
                    area=area, intvl=intvl, first=first, last=last)
         elif (oldunits in rate_units) and (newunits in linear_units):
             if not area:
                 print('Error: A unit conversion operation needed the area, but none was given.')
-                raise Exception('Error converting ' + oldunits
-                          + ' to ' + newunits)
+                raise Exception('Error converting ' + oldunits + ' to ' + newunits)
             return rateToLinear(values=values, oldu=oldunits, newu=newunits,
                    area=area, intvl=intvl, first=first, last=last)
         elif (oldunits in cubic_units) and (newunits in rate_units):
@@ -853,13 +932,7 @@ def convertValues(values=None, oldunits=None, newunits=None,
             return rateToCubic(values=values, oldu=oldunits, newu=newunits, 
                    intvl=intvl, first=first, last=last)
     except:
-        raise Exception('Error converting ' + oldunits
-                  + ' to ' + newunits)
+        raise Exception('Error converting ' + oldunits + ' to ' + newunits)
          
-    raise Exception('Invalid conversion specified; ' + oldunits
-                  + ' to ' + newunits)
+    raise Exception('Invalid conversion specified; ' + oldunits + ' to ' + newunits)
          
-         
-
-
-    

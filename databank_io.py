@@ -11,7 +11,6 @@ fill = -999.9
 month_names = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',  
                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 
-
 # =================================================================
 # ==============   BEGIN READ SECTION ============================
 # =================================================================
@@ -384,6 +383,7 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
     be required when processing these files.
     '''
 
+
     #
     #  Get all of the non-comment content from the file as
     #  a list of strings
@@ -513,7 +513,6 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
 
     ds = databank.DataSeries(kind=mkind, units=munits, intvl=mintvl, loc=mloc,
                              first=start, last=end, values=datavals)
-    
     return ds
 
 
@@ -1065,7 +1064,6 @@ def __write_datavals(filename, file_format, dataseries, width, prec):
         if file_format == 'table':
             # prepare and write header (YYYY, M1, M2, M3, ..., M12)
             mons = range(1, 13)
-            # hdr = ', '.join(['{:>{wid}}'.format('M'+str(m), wid=width) for m in mons])
             hdr = ',       '.join([month_names[m-1] for m in mons])
             hdr_line = ',      '.join(['#YYYY', hdr])
             f.write(hdr_line + '\n')

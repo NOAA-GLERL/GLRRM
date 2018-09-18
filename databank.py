@@ -435,12 +435,13 @@ class DataSeries(object):
     years.
     """
 
-    def __init__(self, kind=None, units=None, intvl=None, loc=None,
+    def __init__(self, kind=None, units=None, intvl=None, loc=None, set=None,
                        first=None, last=None, values=None):
         self.dataKind     = 'na'
         self.dataUnits    = 'na'
         self.dataInterval = 'na'
         self.dataLocation = 'na'
+        self.dataSet      = 'na'
         self.startDate    = util.MISSING_DATE
         self.endDate      = util.MISSING_DATE
         self.dataVals     = []
@@ -475,7 +476,7 @@ class DataSeries(object):
         else:
             self.dataInterval = 'na'
 
-        if loc:            
+        if loc:
             try:
                 self.dataLocation = getPrimaryName(meta='location', name=loc)
                 if isinstance(loc, str):
@@ -484,6 +485,14 @@ class DataSeries(object):
                 raise Exception('Invalid location specifier in DataSeries init')
         else:
             self.dataLocation = 'na'
+
+        if set:
+            try:
+                self.dataSet = set
+            except:
+                raise Exception('Invalid set specifier in DataSeries init')
+        else:
+            self.dataSet = 'na'
 
         if first:
             self.startDate = util.date_from_entry(first)
@@ -513,6 +522,7 @@ class DataSeries(object):
         print(' units = ', DataUnits(self.dataUnits).outputNameLong())
         print(' intvl = ', DataInterval(self.dataInterval).outputNameLong())
         print(' loc   = ', DataLocation(self.dataLocation).outputNameLong())
+        print(' set   = ', self.dataSet)
         print(' start date = ', str(self.startDate))
         print(' end date   = ', str(self.endDate))
         print(' data values = ', self.dataVals)
@@ -524,6 +534,7 @@ class DataSeries(object):
             ' units = ', DataUnits(self.dataUnits).outputNameLong(), ';',
             ' intvl = ', DataInterval(self.dataInterval).outputNameLong(),  ';',
             ' loc = ',   DataLocation(self.dataLocation).outputNameLong(),  ';',
+            ' set = ',   self.dataSet, ';',
             ' dates = ', str(self.startDate),
             ' to ',      str(self.endDate)
         )
@@ -535,6 +546,7 @@ class DataSeries(object):
             'units=' + DataUnits(self.dataUnits).outputNameLong() + ';',
             'intvl=' + DataInterval(self.dataInterval).outputNameLong() + ';',
             'loc='   + DataLocation(self.dataLocation).outputNameLong() + ';',
+            'set='   + self.dataSet + ';',
             'dates=' + str(self.startDate) +
             ' to '   + str(self.endDate)
         )
@@ -564,6 +576,10 @@ class DataSeries(object):
 
         if newData.dataLocation != self.dataLocation:
             print('Error. Mismatched locations in DataSeries.add_data')
+            raise TypeError('Invalid attempt to add data to a DataSeries')
+
+        if newData.dataSet != self.dataSet:
+            print('Error. Mismatched set designators in DataSeries.add_data')
             raise TypeError('Invalid attempt to add data to a DataSeries')
 
         #
@@ -817,10 +833,10 @@ class DataVault(object):
     #    1) The metadata in a DataSeries object, if ds is provided.
     #       OR
     #    2) The specific kind, interval, location specified.
-    #  If ds is given, kind, intvl, loc will be ignored.
+    #  If ds is given, kind, intvl, loc, set will be ignored.
     #
     #  Returns a text string that looks like this:
-    #    kind_intvl_loc
+    #    kind_intvl_loc_set
     #  where:
     #     kind  = the character string defined as the first entry in the
     #             _inputStrings tuple for this data kind. e.g. For runoff data,
@@ -835,21 +851,32 @@ class DataVault(object):
     #             story as the data kind.
     #     loc   = the character string defined as the first entry in the
     #             _inputStrings tuple for this location. Same story as kind/intvl.
+    #     set   = character string name of the data "set" associated with this data.
+    #             e.g. "fcst1", "fcst2", "fcst3", etc.  Length is unrestricted, but
+    #             try not to go too crazy, and no imbedded spaces.
+    #             If set is not specified, a default value of "na" will be used 
+    #             in the key string.
     #
     #  For example, if the function call looks like:
     #     myVault._construct_vault_key(kind='runoff', intvl='daily', loc='ont')
     #  then the kind/intvl/loc values will turn into 'run'/'dy'/'on', and the
-    #  resulting lookup key will be 'run_dy_on'.
+    #  resulting lookup key will be 'run_dy_on_na'.
+    #
+    #  If the function call looks like:
+    #     myVault._construct_vault_key(kind='runoff', intvl='daily', loc='ont', set='abc')
+    #  then the resulting lookup key will be 'run_dy_on_abc'.
     #
     #-------------------------------------------------------------------
     @classmethod
     def _construct_vault_key(thisclass, ds=None, kind=None, 
-                             intvl=None, loc=None):
+                             intvl=None, loc=None, set=None):
         if ds:
             kstr = ds.dataKind
             istr = ds.dataInterval
             lstr = ds.dataLocation
-            return kstr + '_' + istr + '_' + lstr
+            sstr = ds.dataSet
+            key  = kstr + '_' + istr + '_' + lstr + '_' + sstr
+            return key
 
         #
         #  If all 3 items are specified, e.g.
@@ -865,9 +892,16 @@ class DataVault(object):
             kstr = kobj.primaryName()
             istr = iobj.primaryName()
             lstr = lobj.primaryName()
-            return kstr + '_' + istr + '_' + lstr
+            key = kstr + '_' + istr + '_' + lstr
+            if set:
+                key = key + '_' + set
+            else:
+                key = key + '_na'
+            return key
+        else:
+            raise ValueError('Missing DataSeries information in _construct_vault_key')
+            
 
-        raise ValueError('Missing DataSeries information in _construct_vault_key')
 
     #-------------------------------------------------------------------
     def printVault(self):
@@ -878,9 +912,9 @@ class DataVault(object):
     #  The deposit() function is how a user adds data to the vault.
     #  ds is a DataSeries object.
     #-------------------------------------------------------------------
-    def deposit(self, ds, lake_area=None):
+    def deposit(self, datser, lake_area=None):
         try:
-            key = type(self)._construct_vault_key(ds)
+            key = type(self)._construct_vault_key(datser)
         except:
             raise Exception('databank.deposit: error getting the key')
 
@@ -888,51 +922,49 @@ class DataVault(object):
         #  If user did not specify a lake area, then assign a value (if needed)
         #
         if not lake_area:
-            lake_area = util.getLakeArea(ds.dataLocation)
+            lake_area = util.getLakeArea(datser.dataLocation)
             
         #
         #  Create a "normalized" DataSeries object such that the data
         #  units and values conform to the prescribed data units
         #  for storage in the vault.
         #
-        tempvals = copy(ds.dataVals)      # default is to use data as-is
-        normstr = self.getNormalizedUnits(kind=ds.dataKind)
+        tempvals = copy(datser.dataVals)      # default is to use data as-is
+        normstr = self.getNormalizedUnits(kind=datser.dataKind)
         try:
             #
             #  If needed, convert data units.
             #
-            if ds.dataUnits != normstr:
+            if datser.dataUnits != normstr:
                 try:
                     tempvals = None
-                    if ds.dataUnits != normstr:
-                        oldstr = ds.dataUnits
-                        oldvals = copy(ds.dataVals)
+                    if datser.dataUnits != normstr:
+                        oldstr = datser.dataUnits
+                        oldvals = copy(datser.dataVals)
+                        
                         if (oldstr in util.linear_units) and normstr=='m': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, 
-                                    intvl=ds.dataInterval)
+                                    oldunits=oldstr, newunits=normstr, intvl=datser.dataInterval)
                         elif (oldstr in util.rate_units) and normstr=='cms': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, 
-                                    intvl=ds.dataInterval)
+                                    oldunits=oldstr, newunits=normstr, intvl=datser.dataInterval)
                         elif (oldstr in util.areal_units):
                             raise Exception('Error: datavault unable to store '
                                           + 'areal datasets.')
                         elif normstr=='m':
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=ds.startDate, 
-                                    last=ds.endDate, intvl=ds.dataInterval)
+                                    area=lake_area, first=datser.startDate, 
+                                    last=datser.endDate, intvl=datser.dataInterval)
                         elif normstr=='cms':
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=ds.startDate, 
-                                    last=ds.endDate, intvl=ds.dataInterval)
+                                    area=lake_area, first=datser.startDate, 
+                                    last=datser.endDate, intvl=datser.dataInterval)
                         else:
-                            print('ds.dataUnits=', ds.dataUnits)
+                            print('datser.dataUnits=', datser.dataUnits)
                             print('normstr=', normstr)
                             raise Exception('Unhandled data units conversion.')
-
                 except:
                     raise Exception('Unable to do required data conversion.')
         except:
@@ -942,9 +974,9 @@ class DataVault(object):
         #  Create a temporary dataset that contains the data to be added, 
         #  in the correct units.
         #
-        tds = DataSeries(kind=ds.dataKind, units=normstr, loc=ds.dataLocation,
-                    intvl=ds.dataInterval, first=ds.startDate, 
-                    last=ds.endDate, values=tempvals)
+        tds = DataSeries(kind=datser.dataKind, units=normstr, loc=datser.dataLocation,
+                    intvl=datser.dataInterval, set=datser.dataSet, 
+                    first=datser.startDate, last=datser.endDate, values=tempvals)
             
         #
         #  Do we already have a data series like this?
@@ -991,38 +1023,43 @@ class DataVault(object):
                 self.vault.update({key:tds})
             except:
                 print('Error adding new dataset to vault')
-            
-            
 
     #---------------------------------------------------------------
     #  Equivalent to deposit, but with all fields individually specified.
     #---------------------------------------------------------------
-    def deposit_data(self, kind=None, units=None, intvl=None, loc=None, 
-                     first=None, last=None, values=None):
+    def deposit_data(self, kind=None, units=None, intvl=None, loc=None, set=None,
+                     first=None, last=None, values=None, lake_area=None):
         try:
             dk = DataKind(kind).primaryName()
             du = DataUnits(units).primaryName()
             di = DataInterval(intvl).primaryName()
             dl = DataLocation(loc).primaryName()
-            ds = DataSeries(kind=dk, units=du, intvl=di, loc=dl, 
+            dt = set
+            ds = DataSeries(kind=dk, units=du, intvl=di, loc=dl, set=dt,
                  first=first, last=last, values=values)
         except:
             raise Exception(
                 'Error creating temporary DataSeries object in deposit_data()')
             return
-        self.deposit(ds)
 
+        try:
+            self.deposit(ds, lake_area)
+        except:
+            raise Exception('Error adding data series object in deposit_data()')
+            return
+
+            
     #----------------------------------------------------------------
     #  Caller must specify the kind, interval, location and units.
     #  first/last are optional.
-    #  If invalid specififiers are given, returns with a exception.
+    #  If invalid specifiers are given, returns with a exception.
     #  If all works correctly, it returns a DataSeries object, if the 
     #    data is in the vault.
     #  If specified ok, but data does not exist in the vault, then
     #    this also returns None, but no exception is generated.
     #----------------------------------------------------------------
-    def withdraw(self, kind=None, units=None, intvl=None, loc=None, 
-                 first=None, last=None):
+    def withdraw(self, kind=None, units=None, intvl=None, loc=None, set=None,
+                 first=None, last=None, lake_area=None):
 
         #
         #  Verify that all metadata strings were validly specified.
@@ -1069,10 +1106,14 @@ class DataVault(object):
             raise Exception('Invalid or missing location specification '
                            + 'to DataVault.withdraw()')
 
+        dt = 'na'
+        if set:
+            dt = set
+
         #
         #  Construct the vault key from the lookup strings
         #
-        key = type(self)._construct_vault_key(kind=dk, intvl=di, loc=dl)
+        key = type(self)._construct_vault_key(kind=dk, intvl=di, loc=dl, set=dt)
         
         #
         #  Get a temporary dataset
@@ -1107,11 +1148,18 @@ class DataVault(object):
                 intvl=tds.dataInterval)
             
         #
+        #  Use the correct lake area in subsequent data conversion
+        #
+        if lake_area:
+            lkarea = lake_area
+        else:
+            lkarea = util.getLakeArea(tds.dataLocation)
+        
+        #
         #  Now build a final dataset that has the correct units and 
         #  period of record.
         #
         try:
-            lkarea = util.getLakeArea(tds.dataLocation)
             newvals = util.convertValues(values=trimvals,
                     oldunits=tds.dataUnits, newunits=du, 
                     intvl=tds.dataInterval, area=lkarea, 
@@ -1125,5 +1173,3 @@ class DataVault(object):
         except:
             raise Exception('Error while attempting to convert data units in '
                           + 'DataVault.withdraw()')
-            
-

@@ -308,7 +308,7 @@ the_vault = databank.DataVault()
 #  stc_level, eri_level).  A real implementation, of course,
 #  would need to contain much more.
 #
-maincfg = read_main_config('data/example/example_config.txt')
+maincfg = read_main_config('./data/example/example_config.txt')
 outdir      = maincfg[0]
 model_sdate = maincfg[1]
 model_edate = maincfg[2]
