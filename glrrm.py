@@ -347,6 +347,26 @@ nbs = databank_io.read_file('data/example/nbs_eri_cms.txt')
 the_vault.deposit(nbs)
 
 #
+#  This short code section is not really relevant to the larger goal
+#  of this fake model. It is, instead, just a test/proof of how the
+#  databank handles bad data and how it can be used for multiple 
+#  "sets" of similar data. Here I am reading a file that contains
+#  another "set" of monthly Erie NBS values. The file is identical 
+#  to nbs_eri_cms.txt, but with some bad data values
+#  in the file. This will show how the databank handles that.
+#  Notice how I specify set='t1' to differentiate this data from the 
+#  previously read monthly Erie NBS data. Both will be stored in the
+#  vault.
+#
+nbs = databank_io.read_file('data/example/nbs_eri_faulty.txt', missing_value=-99999, set='t1')
+the_vault.deposit(nbs)
+nbs = None     # reset the object
+nbs = the_vault.withdraw(kind='nbs', units='mm', intvl='mon', loc='eri', set='t1')
+fileout = outdir + 'eri_data_test.txt'
+databank_io.write_file(filename=fileout, file_format="table", missing_value=-99999.9,
+                       series=nbs, width=10, prec=2, overwrite=True)
+
+#
 #  Now I need to know what the overall period of record is for
 #  the data that I stored.  I will retrieve each of the monthly
 #  NBS data sets, and find the overlapping period of record.
@@ -384,7 +404,7 @@ if nbs.startDate > data_start:
     data_start = nbs.startDate
 if nbs.endDate < data_end:
     data_end = nbs.endDate
-
+   
 #
 #  Do I have sufficient data stored to run my model for the period that
 #  was specified in the config file?
@@ -424,24 +444,24 @@ ds = the_vault.withdraw(kind='eomlev', units='meters', intvl='mon', loc='sup',
                      first=model_sdate, last=model_edate)
 fileout = outdir+'suplev_test.txt'
 databank_io.write_file(filename=fileout, file_format="table",
-                    dataseries=ds, overwrite=True)
+                       series=ds, overwrite=True)
                     
 ds = the_vault.withdraw(kind='eomlev', units='meters', intvl='mon', loc='mhu', 
                      first=model_sdate, last=model_edate)
 fileout = outdir+'mhulev_test.txt'
 databank_io.write_file(filename=fileout, file_format="table",
-                    dataseries=ds, overwrite=True)
+                       series=ds, overwrite=True)
                     
 ds = the_vault.withdraw(kind='flow', units='cms', intvl='mon', loc='stmarys', 
                      first=model_sdate, last=model_edate)
 fileout = outdir+'smrflow_test.txt'
 databank_io.write_file(filename=fileout, file_format="table",
-                    dataseries=ds, overwrite=True)
+                       series=ds, overwrite=True)
                     
 ds = the_vault.withdraw(kind='flow', units='cms', intvl='mon', loc='stcriver', 
                      first=model_sdate, last=model_edate)
 fileout = outdir+'stcflow_test.txt'
 databank_io.write_file(filename=fileout, file_format="table",
-                    dataseries=ds, overwrite=True)
+                       series=ds, overwrite=True)
     
 

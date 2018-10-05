@@ -755,7 +755,6 @@ class DataSeries(object):
 
         return True
 
-
 #--------------------------------------------------------------------------------
 #  Define the DataVault class that stores a bunch of DataSeries objects and will
 #  be used as the repository for GLRRM data.
@@ -910,11 +909,11 @@ class DataVault(object):
 
     #-------------------------------------------------------------------
     #  The deposit() function is how a user adds data to the vault.
-    #  ds is a DataSeries object.
+    #  series is a DataSeries object.
     #-------------------------------------------------------------------
-    def deposit(self, datser, lake_area=None):
+    def deposit(self, series, lake_area=None):
         try:
-            key = type(self)._construct_vault_key(datser)
+            key = type(self)._construct_vault_key(series)
         except:
             raise Exception('databank.deposit: error getting the key')
 
@@ -922,47 +921,47 @@ class DataVault(object):
         #  If user did not specify a lake area, then assign a value (if needed)
         #
         if not lake_area:
-            lake_area = util.getLakeArea(datser.dataLocation)
+            lake_area = util.getLakeArea(series.dataLocation)
             
         #
         #  Create a "normalized" DataSeries object such that the data
         #  units and values conform to the prescribed data units
         #  for storage in the vault.
         #
-        tempvals = copy(datser.dataVals)      # default is to use data as-is
-        normstr = self.getNormalizedUnits(kind=datser.dataKind)
+        tempvals = copy(series.dataVals)      # default is to use data as-is
+        normstr = self.getNormalizedUnits(kind=series.dataKind)
         try:
             #
             #  If needed, convert data units.
             #
-            if datser.dataUnits != normstr:
+            if series.dataUnits != normstr:
                 try:
                     tempvals = None
-                    if datser.dataUnits != normstr:
-                        oldstr = datser.dataUnits
-                        oldvals = copy(datser.dataVals)
+                    if series.dataUnits != normstr:
+                        oldstr = series.dataUnits
+                        oldvals = copy(series.dataVals)
                         
                         if (oldstr in util.linear_units) and normstr=='m': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, intvl=datser.dataInterval)
+                                    oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
                         elif (oldstr in util.rate_units) and normstr=='cms': 
                             tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, intvl=datser.dataInterval)
+                                    oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
                         elif (oldstr in util.areal_units):
                             raise Exception('Error: datavault unable to store '
                                           + 'areal datasets.')
                         elif normstr=='m':
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=datser.startDate, 
-                                    last=datser.endDate, intvl=datser.dataInterval)
+                                    area=lake_area, first=series.startDate, 
+                                    last=series.endDate, intvl=series.dataInterval)
                         elif normstr=='cms':
                             tempvals = util.convertValues(values=oldvals, 
                                     oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=datser.startDate, 
-                                    last=datser.endDate, intvl=datser.dataInterval)
+                                    area=lake_area, first=series.startDate, 
+                                    last=series.endDate, intvl=series.dataInterval)
                         else:
-                            print('datser.dataUnits=', datser.dataUnits)
+                            print('series.dataUnits=', series.dataUnits)
                             print('normstr=', normstr)
                             raise Exception('Unhandled data units conversion.')
                 except:
@@ -974,9 +973,9 @@ class DataVault(object):
         #  Create a temporary dataset that contains the data to be added, 
         #  in the correct units.
         #
-        tds = DataSeries(kind=datser.dataKind, units=normstr, loc=datser.dataLocation,
-                    intvl=datser.dataInterval, set=datser.dataSet, 
-                    first=datser.startDate, last=datser.endDate, values=tempvals)
+        tds = DataSeries(kind=series.dataKind, units=normstr, loc=series.dataLocation,
+                    intvl=series.dataInterval, set=series.dataSet, 
+                    first=series.startDate, last=series.endDate, values=tempvals)
             
         #
         #  Do we already have a data series like this?
@@ -1168,7 +1167,7 @@ class DataVault(object):
             istr = tds.dataInterval;
             lstr = tds.dataLocation;
             rds = DataSeries(kind=kstr, units=units, intvl=istr, loc=lstr,
-                    first=newfirst, last=newlast, values=newvals)
+                    first=newfirst, last=newlast, set=dt, values=newvals)
             return rds
         except:
             raise Exception('Error while attempting to convert data units in '

@@ -6,7 +6,7 @@ import databank_util as util
 
 
 # set fill value for missing data or non-existent values in table
-fill = -999.9
+fill = util.MISSING_REAL
 
 month_names = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',  
                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
@@ -54,8 +54,9 @@ def __get_valid_lines(filename):
                 linelist.append(s2)
     return linelist
 
+#--------------------------------------------------------------------
 def __get_meta_data(all_lines):
-    '''--------------------------------------------------------------------
+    '''
     Parse all lines of the file looking for lines that match the format
     of metadata specifiers.  When one of those is encountered, try to
     parse out the metadata in it.
@@ -101,14 +102,16 @@ def __get_meta_data(all_lines):
     return mkind, munits, mintvl, mloc
 
 
+#--------------------------------------------------------------------
 def __detect_format(filename, data_lines, intvl):
     ''' Detect the format of filename based on the given data_lines
     and intvl.
 
     Loop through data_lines and check the number of items on each line,
-    check for the type of delimitter, and confirm that all date strings
+    check for the type of delimiter, and confirm that all date strings
     can be cast as integers and that all data values can be cast as
     floats.
+    Modification on 10/1/2018 -- gracefully accept faulty data values.
 
     Returns:
     --------
@@ -156,9 +159,9 @@ def __detect_format(filename, data_lines, intvl):
             # ensure one and only one format was matched
             if sum([cglrrm, table, column]) != 1: format_ok = False
 
-            # check that data/dates are numbers
+            #  check that dates are numbers
+            #  data may be a problem, but that will be handled later.
             try:
-                vals = [float(s) for s in items[first::]]
                 yy = int(yy)
                 mm = int(mm)
                 if qq: qq = int(qq)
@@ -206,9 +209,9 @@ def __detect_format(filename, data_lines, intvl):
             # ensure one and only one format was matched
             if sum([cglrrm, column]) != 1: format_ok = False
 
-            # check that data/dates are numbers
+            # check that dates are numbers
+            #  data may be a problem, but that will be handled later.
             try:
-                vals = [float(s) for s in items[first::]]
                 yy = int(yy)
                 mm = int(mm)
                 dd = int(dd)
@@ -255,9 +258,9 @@ def __detect_format(filename, data_lines, intvl):
             # ensure one and only one format was matched
             if sum([cglrrm, table, column]) != 1: format_ok = False
 
-            # check that data/dates are numbers
+            # check that dates are numbers
+            #  data may be a problem, but that will be handled later.
             try:
-                vals = [float(s) for s in items[first::]]
                 yy = int(yy)
                 if qq: qq = int(qq)
                 if mm: mm = int(mm)
@@ -305,9 +308,9 @@ def __detect_format(filename, data_lines, intvl):
             # ensure one and only one format was matched
             if sum([cglrrm, table, column]) != 1: format_ok = False
 
-            # check that data/dates are numbers
+            # check that dates are numbers
+            #  data may be a problem, but that will be handled later.
             try:
-                vals = [float(s) for s in items[first::]]
                 yy = int(yy)
                 if mm: mm = int(mm)
             except:
@@ -342,7 +345,8 @@ def __detect_format(filename, data_lines, intvl):
 
 
 #--------------------------------------------------------------------
-def read_file(filename, kind=None, units=None, intvl=None, loc=None):
+def read_file(filename, kind=None, units=None, intvl=None, loc=None, 
+              set=None, missing_value=None):
     '''
     Read in data and metadata from filename and return a dataseries
     object.
@@ -364,13 +368,19 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
     loc : string, optional
         The loc of data ('superior') to be read in.  If filename does
         not contain loc metadata (header info), loc must be set.
+    set : string, optional
+        The set name to be assigned to the data.  This is useful when
+        we have multiple data sets with the same metadata but different 
+        values; e.g. multiple forecasts of the same variable for the
+        same time period (ensemble members). If not provided, the default
+        value will be assigned.
 
     Returns
     -------
     dataseries : object
         an object of class DataSeries with attributes dataKind,
         dataUnits, dataInterval, dataLocation, startDate,
-        endDate, and dataVals (the actual data)
+        endDate, dataSet, and dataVals (the actual data)
 
     Notes
     -----
@@ -410,6 +420,14 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
         raise Exception('Invalid metadata passed to read_file()')
 
     #
+    #  Assign correct value to mset variable
+    #
+    if set:
+        mset = set
+    else:
+        mset = 'na'      # default value
+        
+    #
     #  Parse the data file lines to get any metadata
     #  specified within the file.
     #
@@ -430,7 +448,6 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
     #
     #  Do we have sufficient metadata to continue?
     #
-
     if not mkind  and not fkind:  raise Exception('Missing metadata (kind) for'
                                                   ' processing ' + filename)
     if not munits and not funits: raise Exception('Missing metadata (units) for'
@@ -499,7 +516,7 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
         raise Exception('Format of ' + filename + ' could not be recognized')
     try:
         start, end, datavals = __parse_data(filename, format_name, mintvl,
-                                          data_lines)
+                                          data_lines, missing_value)
     except:
         raise Exception('Error calling parse_data for '+filename+';  format:'
                         +format_name+'; interval:'+mintvl)
@@ -512,11 +529,12 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None):
                         +'; interval:'+mintvl)
 
     ds = databank.DataSeries(kind=mkind, units=munits, intvl=mintvl, loc=mloc,
-                             first=start, last=end, values=datavals)
+                             first=start, last=end, set=mset, values=datavals)
     return ds
 
 
-def __parse_data(filename, format_name, intvl, data_lines):
+#--------------------------------------------------------------------
+def __parse_data(filename, format_name, intvl, data_lines, missing_value=None):
     '''
     --------------------------------------------------------------------
     This function returns a complete DataSeries object.
@@ -528,13 +546,25 @@ def __parse_data(filename, format_name, intvl, data_lines):
                         loop thru to get start, end
                         loop thru to get data values
                 return data start,end, data
-     '''
+                
+    If missing_value is specified, it will be used to evaluate each data value
+    read from the file. Values <= missing_value will be treated as missing.
+    If the value is not specified, then the default value of -999999 will be
+    used as the criterion value.
+    '''
 
     # initialize return values
     start = dt.date(2999, 12, 31)    # ridiculously far into future
     end = dt.date(1000, 1, 1)    # ridiculously far into past
     datavals = None
+    
+    # set up for handling missing values
+    if missing_value:
+        missval = missing_value
+    else:
+        missval = -999999
 
+    #
     if intvl == 'dy':
         #      ACCEPTED DAILY FORMATS
         #  CGLRRM: YYYY MM QQ VAL1 VAL2 ... VAL7 (VAL8)
@@ -592,7 +622,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 sd, ed = util.getQtrMonthStartEnd(year=yy, month=mm, qtr=qq)
                 d1 = dt.date(yy, mm, sd)
                 for i in range(3, len(items)):
-                    val = float(items[i])
+                    try:
+                        val = float(items[i])
+                    except:
+                        val = util.MISSING_REAL
                     ndx = (d1 - start).days + i - 3
                     datavals[ndx] = val
 
@@ -604,7 +637,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 d1 = dt.date(yy, mm, 1)
                 ndays = util.days_in_month(year=yy, month=mm) + 1
                 for i in range(1, ndays):
-                    val = float(items[i])
+                    try:
+                        val = float(items[i])
+                    except:
+                        val = util.MISSING_REAL
                     ndx = (d1 - start).days + i - 1
                     datavals[ndx] = val
 
@@ -617,7 +653,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 d1 = dt.date(yy, mm, dd)
                 #ndx = (d1 - start).days - 1
                 ndx = (d1 - start).days 
-                datavals[ndx] = float(items[1])
+                try:
+                    datavals[ndx] = float(items[1])
+                except:
+                    datavals[ndx] = util.MISSING_REAL
 
 
 
@@ -661,8 +700,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
             dd = int(items[0].split('-')[2])
             d1 = util.getFridayDate(year=yy, month=mm, day=dd)
             ndx = int((d1 - start).days/7)
-            datavals[ndx] = float(items[1])
-
+            try:
+                datavals[ndx] = float(items[1])
+            except:
+                datavals[ndx] = util.MISSING_REAL
 
     if intvl == 'qm':
        #      ACCEPTED QM FORMATS
@@ -737,7 +778,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
 
                 for i in range(2, len(items)):
                     ndx = 48*yy_delta + qq_delta + 4*(i - 2)
-                    datavals[ndx] = float(items[i])
+                    try:
+                        datavals[ndx] = float(items[i])
+                    except:
+                        datavals[ndx] = util.MISSING_REAL
 
 
         if format_name == 'table':
@@ -751,7 +795,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
 
                 for i in range(1,len(items)):
                     ndx = 48*yy_delta + 4*mm_delta + (i - 1)
-                    datavals[ndx] = float(items[i])
+                    try:
+                        datavals[ndx] = float(items[i])
+                    except:
+                        datavals[ndx] = util.MISSING_REAL
 
         if format_name == 'column':
             for line in data_lines:
@@ -765,7 +812,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 qq_delta = qq - start_qtr
 
                 ndx = 48*yy_delta + 4*mm_delta + qq_delta
-                datavals[ndx] = float(items[1])
+                try:
+                    datavals[ndx] = float(items[i])
+                except:
+                    datavals[ndx] = util.MISSING_REAL
 
 
 
@@ -819,7 +869,10 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 mm_delta = mm - start.month
 
                 ndx = 12*yy_delta + mm_delta
-                datavals[ndx] = float(items[1])
+                try:
+                    datavals[ndx] = float(items[1])
+                except:
+                    datavals[ndx] = util.MISSING_REAL
 
 
         if format_name == 'cglrrm' or format_name == 'table':
@@ -829,9 +882,20 @@ def __parse_data(filename, format_name, intvl, data_lines):
                 yy_delta = yy - start.year
                 for i in range(1, len(items)):
                     ndx = 12*yy_delta + i - 1
-                    datavals[ndx] = float(items[i])
+                    try:
+                        datavals[ndx] = float(items[i])
+                    except:
+                        datavals[ndx] = util.MISSING_REAL
 
 
+    #  Once all data values have been read and the datavals[] list 
+    #  has been populated, check all values for meeting the criteria
+    #  as "missing".  Replace those values with MISSING_REAL.
+    for i in range(len(datavals)):
+        if datavals[i] <= missval:
+            datavals[i] = util.MISSING_REAL
+                    
+    #
     return start, end, datavals
 
 
@@ -841,7 +905,8 @@ def __parse_data(filename, format_name, intvl, data_lines):
 # =================================================================
 
 #--------------------------------------------------------------------
-def write_file(filename, file_format, dataseries, overwrite=False, width=9, prec=2):
+def write_file(filename, file_format, series, overwrite=False, 
+               width=9, prec=2, missing_value=None):
     '''
 
     Write dataseries (metadata and datavals) to filename
@@ -853,7 +918,7 @@ def write_file(filename, file_format, dataseries, overwrite=False, width=9, prec
     file_format: string
         The format of the output file ("table" or "column")
         note that weekly data only can be written as column format
-    dataseries: object
+    series: object
         The dataseries object created by databank or read_file
         to be written to filename.
     overwrite: boolean, optional
@@ -867,6 +932,9 @@ def write_file(filename, file_format, dataseries, overwrite=False, width=9, prec
         Used to specify the formatting (decimal precision) of values written to filename.
         if set, it should be used in conjunction with width. MINIMUM VALUE = 1  to properly
         print the fill value of -999.9
+    missing_value: numeric, optional
+        Used to specify the numeric value to output when the data value is missing.
+        Note that the value will be formatted according to width and prec.
     '''
 
 
@@ -875,23 +943,73 @@ def write_file(filename, file_format, dataseries, overwrite=False, width=9, prec
     if file_format not in ['table', 'column']:
         raise Exception('invalid file_format: use \"table\" or \"column\"')
 
-    if dataseries.dataInterval == 'wk' and file_format == 'table':
+    if series.dataInterval == 'wk' and file_format == 'table':
         raise Exception('weekly data must use \"column\" formatting')
-
+        
     try:
-        __write_metadata(filename, dataseries, overwrite)
+        __write_metadata(filename, series, overwrite)
     except:
         raise Exception('Unable to write metadata to ' + filename)
 
     try:
-        __write_datavals(filename, file_format, dataseries, width, prec)
+        __write_datavals(filename, file_format, series, width, prec, missing_value)
     except:
         raise Exception('Unable to write datavals to ' + filename)
 
+        
+#--------------------------------------------------------------------
+def __missing_value_string(width, prec, value=None):
+    ''' constructs a missing data value appropriate for the specified width/precision 
+    width: integer in range 3 to 20
+        Used to specify the formatting (column width) of missing values for output.
+        Minimum value = 3
+        Maximum value = 20 (a little arbitrary, but reasonable)
+    prec: integer in range 0 to 8
+        Used to specify the formatting (decimal precision) of missing values for output.
+        Minimum value = 0, which results in an integer value
+        Maximum value = 8 (a little arbitrary, but reasonable)
+        Values from 1 to 8 result in an output with that many digits after the decimal
+        prec must be less than or equal to (width - 3)
+    value: optional numeric argument. By convention, it should be something like
+        -99999 or -9.99e5 or some other string that looks like a minus 99999.
+        The value will be formatted according to width & prec.  
+    
+    e.g. (3,0)  -> -99 
+         (4,1)  -> -9.9
+         (9,4)  -> -999.9999
+         (10,2) -> -999999.99
+         (11,0) -> -9999999999
+    '''
+    if (width < 3):  raise Exception('Invalid width specifier < 3')
+    if (width > 20): raise Exception('Invalid width specifier > 20')
+    if (prec < 0):   raise Exception('Invalid precision specifier < 0')
+    if (prec > 8):   raise Exception('Invalid precision specifier > 8')
+    if (prec > (width-3)):  raise Exception('Invalid precision specifier > (width-3)')
 
+    #
+    #  No value specified
+    #
+    if value==None:
+        s = '-'
+        l = width - prec - 1
+        if prec > 0: 
+            l = l - 1
+        for i in range(l):
+            s = s + '9'
+        if prec > 0:
+            s = s + '.'
+            for i in range(prec):
+                s = s + '9'
+        return s
 
-
-
+    #
+    f = '%' + str(width) + '.' + str(prec) + 'f'
+    s = f % value
+    return s
+        
+        
+        
+#--------------------------------------------------------------------
 def __write_metadata(filename, dataseries, overwrite):
     ''' writes metadata to filename '''
 
@@ -923,19 +1041,36 @@ def __write_metadata(filename, dataseries, overwrite):
     f.close()
 
 
-def __write_datavals(filename, file_format, dataseries, width, prec):
-    ''' Write the dataseries.dataVals to filename'''
-
+#--------------------------------------------------------------------
+def __write_datavals(filename, file_format, dataseries, width, prec, missing_value=None):
+    ''' Write the dataseries.dataVals to filename
+    optional parameter missing_value specifies the value to output as a missing value
+    '''
     intvl = dataseries.dataInterval
-    vals = dataseries.dataVals
+    vals = dataseries.dataVals.copy()    # make an actual copy of the list
     start = dataseries.startDate
     end = dataseries.endDate
     fmt = '{0:' + str(width) + '.' + str(prec) + 'f}'
 
-    # define fill value # JAK?
-    fill = -999.9
-    #fill = -9.29e-11?
+    # define fill value
+    if missing_value:
+        fill = missing_value
+    else:
+        fill = __missing_value_string(width-1, prec)
+    
+    # go through the temporary copy of the dataVals list, replacing all missing data
+    # with the fill value.  By doing this now, we can process things efficiently
+    # in all of the subsequent code.
+    if (prec == 0):
+        mval = int(fill)
+    else:
+        mval = float(fill)
+    l = len(vals)
+    for i in range(l):
+        if vals[i] < util.MISSING_TEST:
+            vals[i] = mval
 
+    #
     f = open(filename, 'a')
 
     # daily
@@ -1057,9 +1192,6 @@ def __write_datavals(filename, file_format, dataseries, width, prec):
                     date = date + dt.timedelta(days=dom)
 
 
-
-
-
     if intvl == 'mn':
         if file_format == 'table':
             # prepare and write header (YYYY, M1, M2, M3, ..., M12)
@@ -1105,8 +1237,5 @@ def __write_datavals(filename, file_format, dataseries, width, prec):
                 dom = util.days_in_month(date.year, date.month)
                 date = date + dt.timedelta(days=dom)
 
-
-
-
-        f.close()
+    f.close()
 

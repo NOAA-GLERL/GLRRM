@@ -1,15 +1,16 @@
 import datetime as dt
-import databank as bank
+import databank
 
 #==========
-#  IMPORTANT:  Please note the above use of "import databank as bank".  This is
+#  IMPORTANT:  Please note the above use of "import databank".  This is
 #  an inelegant circular import that offends my sensibilities, but I'm kind of
 #  stuck with it unless I were to combine databank.py and databank_util.py into
 #  a single file, which is also ugly.  I only do it for use in the getLakeArea()
 #  function, where I need to be able to look up the normalized data location
 #  name. In truth, this seems to imply to me that I should reorganize this
-#  whole thing, but I really don't want to do that at this time. So I am gonna
-#  let this one bit of nastiness persist -- for now.
+#  whole thing, moving all of those names,etc into a separate .py file, but 
+#  I really don't want to do that at this time. So I am gonna let this one bit 
+#  of nastiness persist -- for now.
 #  Tim Hunter  2018sep17
 #===========
 
@@ -22,8 +23,9 @@ import databank as bank
 #  For numeric values, I am just assigning very large negative numbers.
 #-------------------------
 MISSING_DATE = dt.date(9999, 9, 9)
-MISSING_INT  = -999999999
 MISSING_REAL = -9.9e29
+MISSING_INT  = -999999999
+MISSING_TEST = -999999998
 
 linear_units = ('mm',  'cm',  'm',  'km',  'in',  'ft',  'yd',  'mi')
 areal_units  = ('mm2', 'cm2', 'm2', 'km2', 'in2', 'ft2', 'yd2', 'mi2')
@@ -59,7 +61,7 @@ qtr_month_start_end_days = (
 def getLakeArea(loc=None):
     if not loc: return None
     try:
-        l = bank.DataLocation(loc)
+        l = databank.DataLocation(loc)
         s = l.primaryName().lower()
         #
         #  First handle the obvious case where the specified location 
@@ -96,9 +98,9 @@ def days_in_month(year=None, month=None):
     ''' Determine # of days in month.  This is maybe out of place... 
         not intended to be called by user but just a helper function 
     '''
-    if not year:
+    if year==None:
         raise Exception('No year specified in days_in_month()')
-    if not month:
+    if month==None:
         raise Exception('No month specified in days_in_month()')
         
     try:
@@ -110,7 +112,7 @@ def days_in_month(year=None, month=None):
         raise Exception('Error computing number of days in a month')
 
 
-
+#--------------------------------------------------------------------
 def getFridayDate(year=None, month=None, day=None):
     '''Get the date of the most recent (i.e. PRECEDING) friday given a yr,mo, day.  
 	This is to match the previous convention that the CGLRRM used for weekly data beginning on friday.'''
@@ -189,7 +191,7 @@ def getQtrMonthStartEnd(year=None, month=None, qtr=None):
 
 #-------------------------------------------------------
 #  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
+#           Any value < MISSING_TEST is considered "missing"
 #  oldstart = starting date for the old data list
 #  oldend   = ending date for the old data list
 #  newstart = starting date for the result data list
@@ -258,14 +260,14 @@ def trimDataValues(values=None, oldstart=None, oldend=None,
 
 #-------------------------------------------------------
 #  value = data value to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm', 'inch' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  area  = area in sq meters
 #  secs  = number of seconds over which the linear amount was accumulated
 #-------------------------------------------------------
 def valueLinearToRate(value=None, oldu=None, newu=None, area=None, secs=None):
-    if not value: return None
+    if value==None: return None
     if not oldu:  return None
     if not newu:  return None
     if not area:  return None
@@ -274,7 +276,7 @@ def valueLinearToRate(value=None, oldu=None, newu=None, area=None, secs=None):
     try:
         v1 = [value]
         m  = linearConvert(v1, oldu, 'm')
-        vcms = [MISSING_REAL if v<-9.8e20 else v*(area/secs) for v in m]
+        vcms = [MISSING_REAL if v<MISSING_TEST else v*(area/secs) for v in m]
         v2 = rateConvert(vcms, 'cms', newu)
         return v2[0]
     except:
@@ -283,13 +285,13 @@ def valueLinearToRate(value=None, oldu=None, newu=None, area=None, secs=None):
         
 #-------------------------------------------------------
 #  value = data value to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm3', 'in3' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  secs  = number of seconds over which the volume was accumulated
 #-------------------------------------------------------
 def valueCubicToRate(value=None, oldu=None, newu=None, secs=None):
-    if not value: return None
+    if value==None: return None
     if not oldu:  return None
     if not newu:  return None
     if not secs:  return None
@@ -297,7 +299,7 @@ def valueCubicToRate(value=None, oldu=None, newu=None, secs=None):
     try:
         v1 = [value]
         m3 = cubicConvert(v1, oldu, 'm3')
-        vcms = [MISSING_REAL if v<-9.8e20 else v/secs for v in m3]
+        vcms = [MISSING_REAL if v<MISSING_TEST else v/secs for v in m3]
         v2 = rateConvert(vcms, 'cms', newu)
         return v2[0]
     except:
@@ -306,13 +308,13 @@ def valueCubicToRate(value=None, oldu=None, newu=None, secs=None):
         
 #-------------------------------------------------------
 #  value = data value to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm3', 'in3' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  secs  = number of seconds over which the volume was accumulated
 #-------------------------------------------------------
 def valueRateToLinear(value=None, oldu=None, newu=None, area=None, secs=None):
-    if not value: return None
+    if value==None: return None
     if not oldu:  return None
     if not newu:  return None
     if not area:  return None
@@ -321,7 +323,7 @@ def valueRateToLinear(value=None, oldu=None, newu=None, area=None, secs=None):
     try:
         v1 = [value]
         vcms = rateConvert(v1, oldu, 'cms')
-        vm = [MISSING_REAL if v<-9.8e20 else v*secs/area for v in vcms]
+        vm = [MISSING_REAL if v<MISSING_TEST else v*secs/area for v in vcms]
         v2 = linearConvert(vm, 'm', newu)
         return v2[0]
     except:
@@ -329,13 +331,13 @@ def valueRateToLinear(value=None, oldu=None, newu=None, area=None, secs=None):
 
 #-------------------------------------------------------
 #  value = data value to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm3', 'in3' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  secs  = number of seconds over which the volume was accumulated
 #-------------------------------------------------------
 def valueRateToCubic(value=None, oldu=None, newu=None, secs=None):
-    if not value: return None
+    if value==None: return None
     if not oldu:  return None
     if not newu:  return None
     if not secs:  return None
@@ -343,99 +345,15 @@ def valueRateToCubic(value=None, oldu=None, newu=None, secs=None):
     try:
         v1 = [value]
         vcms = rateConvert(v1, oldu, 'cms')
-        vm3 = [MISSING_REAL if v<-9.8e20 else v*secs for v in vcms]
+        vm3 = [MISSING_REAL if v<MISSING_TEST else v*secs for v in vcms]
         v2 = cubicConvert(vm3, 'm3', newu)
         return v2[0]
     except:
         raise Exception('Unable to convert ' + oldu + '->' + newu)
 
-#--------------------------------------------------------------------
-#  oldunits, newunits must be specified as strings, and must have a matching
-#  entry in the tuples defined at the top.
-#--------------------------------------------------------------------
-def convertValues(values=None, oldunits=None, newunits=None, 
-                  area=None, intvl=None, first=None, last=None):
-    if not values:   return None
-    if not oldunits: return None
-    if not newunits: return None
-        
-    if not isinstance(oldunits, str):
-        raise Exception('Invalid oldunits specification in convertValues.')
-    if not isinstance(newunits, str):
-        raise Exception('Invalid newunits specification in convertValues.')
-
-    #
-    #  If the conversion is within the same kind of units, we can
-    #  do it directly.
-    #
-    try:
-        if (oldunits in linear_units) and (newunits in linear_units):
-            return linearConvert(values, oldunits, newunits)
-        elif (oldunits in areal_units) and (newunits in areal_units):
-            return arealConvert(values, oldunits, newunits)
-        elif (oldunits in cubic_units) and (newunits in cubic_units):
-            return cubicConvert(values, oldunits, newunits)
-        elif (oldunits in rate_units) and (newunits in rate_units):
-            return rateConvert(values, oldunits, newunits)
-    except:
-        raise Exception('Error converting ' + oldunits
-                  + ' to ' + newunits)
-    
-    #
-    #  If the conversion request is cross-group (e.g. cm -> cms)
-    #  then we need to do it in two steps.
-    #  Note that this is only valid to/from rate units.  Conversion
-    #  from, for example, cm -> ft3 makes no sense.
-    #     linear  ->  meters
-    #     areal   ->  invalid
-    #                 area <> rate doesn't work
-    #     cubic   ->  cubic meters
-    #     rate    ->  cubic meters per second
-    #
-    #  We require the number of seconds in all cases.
-    #  If we are converting linear <-> rate, we also need the area.
-    #  If we are doing cubic <-> rate, we do not need area.
-    #
-    #  If doing daily or weekly we could process every value with
-    #  the same conversion factors, but in the general case each 
-    #  value must be computed independently because the number
-    #  of seconds will vary (e.g. February != June).  That will
-    #  be handled in the routines called from this section of code.
-    #
-    #  We require the start/end dates for data intervals greater than
-    #  weekly, because we have to compute the number of days for each
-    #  value.
-    #
-    if not intvl: return None
-    if not area:  return None
-    if (intvl == 'qm') or (intvl == 'mn') or (intvl == 'yr'):
-        if not first: return None
-        if not last:  return None
-
-    try:
-        if (oldunits in linear_units) and (newunits in rate_units):
-            return linearToRate(values=values, oldu=oldunits, newu=newunits, 
-                   area=area, intvl=intvl, first=first, last=last)
-        elif (oldunits in cubic_units) and (newunits in rate_units):
-            return cubicToRate(values=values, oldu=oldunits, newu=newunits, 
-                   intvl=intvl, first=first, last=last)
-        elif (oldunits in rate_units) and (newunits in linear_units):
-            return rateToLinear(values=values, oldu=oldunits, newu=newunits,
-                   area=area, intvl=intvl, first=first, last=last)
-        elif (oldunits in rate_units) and (newunits in cubic_units):
-            return rateToCubic(values=values, oldu=oldunits, newu=newunits, 
-                   intvl=intvl, first=first, last=last)
-    except:
-        raise Exception('Error converting ' + oldunits
-                  + ' to ' + newunits)
-         
-    raise Exception('Invalid conversion specified; ' + oldunits
-                  + ' to ' + newunits)
-         
-         
 #-------------------------------------------------------
 #  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
+#           Any value < MISSING_TEST is considered "missing"
 #  oldstr = unit string for incoming data (e.g. 'mm', 'm', 'ft')
 #  newstr = unit string for outgoing data (e.g. 'mm', 'm', 'ft')
 #-------------------------------------------------------
@@ -476,7 +394,7 @@ def linearConvert(values=None, oldstr=None, newstr=None):
                 
         mult = m1 * m2
         if mult > 0.0:
-            return [MISSING_REAL if v<-9.8e20 else v * mult for v in values]
+            return [MISSING_REAL if v<MISSING_TEST else v * mult for v in values]
         else:
             raise Exception('Invalid conversion specified: ' + oldstr 
                           + '->' + newstr)
@@ -485,7 +403,7 @@ def linearConvert(values=None, oldstr=None, newstr=None):
         
 #-------------------------------------------------------
 #  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
+#           Any value < MISSING_TEST is considered "missing"
 #  oldstr = unit string for incoming data (e.g. 'mm2', 'm2', 'ft2')
 #  newstr = unit string for outgoing data (e.g. 'mm2', 'm2', 'ft2')
 #-------------------------------------------------------
@@ -526,7 +444,7 @@ def arealConvert(values=None, oldstr=None, newstr=None):
                 
         mult = m1 * m2
         if mult > 0.0:
-            return [MISSING_REAL if v<-9.8e20 else v * mult for v in values]
+            return [MISSING_REAL if v<MISSING_TEST else v * mult for v in values]
         else:
             raise Exception('Invalid conversion specified: ' + oldstr 
                           + '->' + newstr)
@@ -535,7 +453,7 @@ def arealConvert(values=None, oldstr=None, newstr=None):
         
 #-------------------------------------------------------
 #  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
+#           Any value < MISSING_TEST is considered "missing"
 #  oldstr = unit string for incoming data (e.g. 'mm3', 'm3', 'ft3')
 #  newstr = unit string for outgoing data (e.g. 'mm3', 'm3', 'ft3')
 #-------------------------------------------------------
@@ -576,7 +494,7 @@ def cubicConvert(values=None, oldstr=None, newstr=None):
                 
         mult = m1 * m2
         if mult > 0.0:
-            return [MISSING_REAL if v<-9.8e20 else v * mult for v in values]
+            return [MISSING_REAL if v<MISSING_TEST else v * mult for v in values]
         else:
             raise Exception('Invalid conversion specified: ' + oldstr 
                           + '->' + newstr)
@@ -585,7 +503,7 @@ def cubicConvert(values=None, oldstr=None, newstr=None):
         
 #-------------------------------------------------------
 #  values = list of data values
-#           Any value < -9.9e20 is considered "missing"
+#           Any value < MISSING_TEST is considered "missing"
 #  oldstr = unit string for incoming data (e.g. 'cms', 'tcfs' )
 #  newstr = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #-------------------------------------------------------
@@ -618,7 +536,7 @@ def rateConvert(values=None, oldstr=None, newstr=None):
                 
         mult = m1 * m2
         if mult > 0.0:
-            return [MISSING_REAL if v<-9.8e20 else v * mult for v in values]
+            return [MISSING_REAL if v<MISSING_TEST else v * mult for v in values]
         else:
             raise Exception('Invalid conversion: ' + oldstr + '->' + newstr)
     except:
@@ -627,7 +545,7 @@ def rateConvert(values=None, oldstr=None, newstr=None):
 
 #-------------------------------------------------------
 #  values = list of data values to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm', 'in' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  area  = effective area in square meters
@@ -654,7 +572,7 @@ def linearToRate(values=None, oldu=None, newu=None, area=None,
         secs = 86400
         try:
             m  = linearConvert(values, oldu, 'm')
-            vcms = [MISSING_REAL if v<-9.8e20 else v*(area/secs) for v in m]
+            vcms = [MISSING_REAL if v<MISSING_TEST else v*(area/secs) for v in m]
             newv = rateConvert(vcms, 'cms', newu)
             return newv
         except:
@@ -682,7 +600,7 @@ def linearToRate(values=None, oldu=None, newu=None, area=None,
     
 #-------------------------------------------------------
 #  values = list of data values to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm', 'in' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  area  = effective area in square meters
@@ -709,7 +627,7 @@ def rateToLinear(values=None, oldu=None, newu=None, area=None,
         secs = 86400
         try:
             vcms = rateConvert(values, oldu, 'cms')
-            vm = [MISSING_REAL if v<-9.8e20 else v*secs/area for v in vcms]
+            vm = [MISSING_REAL if v<MISSING_TEST else v*secs/area for v in vcms]
             newv = linearConvert(vm, 'm', newu)
             return newv
         except:
@@ -737,7 +655,7 @@ def rateToLinear(values=None, oldu=None, newu=None, area=None,
     
 #-------------------------------------------------------
 #  values = list of data values to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm3', 'in3' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  intvl = interval of the data ('dy', 'wk', 'qm', 'mn')
@@ -762,7 +680,7 @@ def cubicToRate(values=None, oldu=None, newu=None,
         secs = 86400
         try:
             m3 = cubicConvert(values, oldu, 'm3')
-            vcms = [MISSING_REAL if v<-9.8e20 else v/secs for v in m3]
+            vcms = [MISSING_REAL if v<MISSING_TEST else v/secs for v in m3]
             newv = rateConvert(vcms, 'cms', newu)
             return newv
         except:
@@ -790,7 +708,7 @@ def cubicToRate(values=None, oldu=None, newu=None,
     
 #-------------------------------------------------------
 #  values = list of data values to be converted
-#            Any value < -9.9e20 is considered "missing"
+#            Any value < MISSING_TEST is considered "missing"
 #  oldu  = unit string for incoming data (e.g. 'cm3', 'in3' )
 #  newu  = unit string for outgoing data (e.g. 'cms', 'tcfs')
 #  intvl = interval of the data ('dy', 'wk', 'qm', 'mn')
@@ -815,7 +733,7 @@ def rateToCubic(values=None, oldu=None, newu=None,
         secs = 86400
         try:
             vcms = rateConvert(values, oldu, 'cms')
-            vm3 = [MISSING_REAL if v<-9.8e20 else v*secs for v in vcms]
+            vm3 = [MISSING_REAL if v<MISSING_TEST else v*secs for v in vcms]
             newv = cubicConvert(vm3, 'm3', newu)
             return newv
         except:
