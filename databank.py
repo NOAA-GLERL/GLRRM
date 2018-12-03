@@ -928,54 +928,55 @@ class DataVault(object):
         #  units and values conform to the prescribed data units
         #  for storage in the vault.
         #
-        tempvals = copy(series.dataVals)      # default is to use data as-is
+        tempvals = series.dataVals.copy()      # default is to use data as-is
         normstr = self.getNormalizedUnits(kind=series.dataKind)
-        try:
-            #
-            #  If needed, convert data units.
-            #
-            if series.dataUnits != normstr:
-                try:
-                    tempvals = None
-                    if series.dataUnits != normstr:
-                        oldstr = series.dataUnits
-                        oldvals = copy(series.dataVals)
-                        
-                        if (oldstr in util.linear_units) and normstr=='m': 
-                            tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
-                        elif (oldstr in util.rate_units) and normstr=='cms': 
-                            tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
-                        elif (oldstr in util.areal_units):
-                            raise Exception('Error: datavault unable to store '
-                                          + 'areal datasets.')
-                        elif normstr=='m':
-                            tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=series.startDate, 
-                                    last=series.endDate, intvl=series.dataInterval)
-                        elif normstr=='cms':
-                            tempvals = util.convertValues(values=oldvals, 
-                                    oldunits=oldstr, newunits=normstr,
-                                    area=lake_area, first=series.startDate, 
-                                    last=series.endDate, intvl=series.dataInterval)
-                        else:
-                            print('series.dataUnits=', series.dataUnits)
-                            print('normstr=', normstr)
-                            raise Exception('Unhandled data units conversion.')
-                except:
-                    raise Exception('Unable to do required data conversion.')
-        except:
-            raise Exception('Unable to create dataset for the datavault.')
+        
+        #
+        #  If needed, convert data units.
+        #
+        if series.dataUnits != normstr:
+            try:
+                tempvals = None
+                if series.dataUnits != normstr:
+                    oldstr = series.dataUnits
+                    oldvals = copy(series.dataVals)
+                    
+                    if (oldstr in util.linear_units) and normstr=='m': 
+                        tempvals = util.convertValues(values=oldvals, 
+                                oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
+                    elif (oldstr in util.rate_units) and normstr=='cms': 
+                        tempvals = util.convertValues(values=oldvals, 
+                                oldunits=oldstr, newunits=normstr, intvl=series.dataInterval)
+                    elif (oldstr in util.areal_units):
+                        raise Exception('Error: datavault unable to store '
+                                      + 'areal datasets.')
+                    elif normstr=='m':
+                        tempvals = util.convertValues(values=oldvals, 
+                                oldunits=oldstr, newunits=normstr,
+                                area=lake_area, first=series.startDate, 
+                                last=series.endDate, intvl=series.dataInterval)
+                    elif normstr=='cms':
+                        tempvals = util.convertValues(values=oldvals, 
+                                oldunits=oldstr, newunits=normstr,
+                                area=lake_area, first=series.startDate, 
+                                last=series.endDate, intvl=series.dataInterval)
+                    else:
+                        print('series.dataUnits=', series.dataUnits)
+                        print('normstr=', normstr)
+                        raise Exception('Unhandled data units conversion.')
+            except:
+                raise Exception('Unable to do required data conversion.')
 
         #
         #  Create a temporary dataset that contains the data to be added, 
         #  in the correct units.
         #
-        tds = DataSeries(kind=series.dataKind, units=normstr, loc=series.dataLocation,
-                    intvl=series.dataInterval, set=series.dataSet, 
-                    first=series.startDate, last=series.endDate, values=tempvals)
+        try:
+            tds = DataSeries(kind=series.dataKind, units=normstr, loc=series.dataLocation,
+                        intvl=series.dataInterval, set=series.dataSet, 
+                        first=series.startDate, last=series.endDate, values=tempvals)
+        except:
+            raise Exception('Unable to create required DataSeries object.')
             
         #
         #  Do we already have a data series like this?
@@ -1008,6 +1009,8 @@ class DataVault(object):
 
             #
             #  Merge the two DataSeries objects
+            #  Note that the object already in the vault is modified in place,
+            #  so we don't have to add anything with "update".
             #
             try:
                 old.add_data(tds)
@@ -1145,7 +1148,7 @@ class DataVault(object):
                 oldstart=tds.startDate, oldend=tds.endDate,
                 newstart=newfirst, newend=newlast,
                 intvl=tds.dataInterval)
-            
+
         #
         #  Use the correct lake area in subsequent data conversion
         #

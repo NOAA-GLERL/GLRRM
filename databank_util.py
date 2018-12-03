@@ -183,12 +183,31 @@ def getQtrMonthStartEnd(year=None, month=None, qtr=None):
 
     try:
         days = days_in_month(year=year, month=month)
-        sd = qtr_month_start_end_days[days-28][qtr-1][0]
-        ed = qtr_month_start_end_days[days-28][qtr-1][1]
+        qdef = days-28       # which kind of month is it?  [0,1,2,3]
+        sd = qtr_month_start_end_days[qdef][qtr-1][0]
+        ed = qtr_month_start_end_days[qdef][qtr-1][1]
         return sd, ed
     except:
         raise Exception('Error finding start/end of a qtr-month')
 
+#--------------------------------------------------------------------
+def qtr_month_from_date(adate):
+    if not adate:
+        raise Exception('No date specified in qtr_month_from_date()')
+    if not isinstance(adate, dt.date):
+        raise Exception('Invalid object type passed to qtr_month_from_date()')
+        
+    try:
+        dy = adate.day
+        days = days_in_month(year=adate.year, month=adate.month)
+        qdef = days-28       # which kind of month is it?  [0,1,2,3]
+        for i in range(4):
+            if dy <= qtr_month_start_end_days[qdef][i][1]:
+                return i+1
+    except:
+        raise Exception('Error in qtr_month_from_date()')
+        
+        
 #-------------------------------------------------------
 #  values = list of data values
 #           Any value < MISSING_TEST is considered "missing"
@@ -248,6 +267,22 @@ def trimDataValues(values=None, oldstart=None, oldend=None,
         d2 = (newe-olds).days
         return values[d1:d2]
         
+    if intvl.lower()=='wk':
+        # index of start/end days
+        w1 = (news-olds).days / 7
+        w2 = (newe-olds).days / 7
+        return values[w1:w2]
+        
+    if intvl.lower()=='qm':
+        # index of start/end days
+        y = news.year - olds.year
+        m = news.month - olds.month
+        q1 = y*48 + m*4      # works even if m is negative
+        y = newe.year - olds.year
+        m = newe.month - olds.month + 1
+        q2 = y*48 + m*4      # works even if m is negative
+        return values[q1:q2]
+
     if intvl.lower()=='mn':
         # index of start/end months
         y = news.year - olds.year

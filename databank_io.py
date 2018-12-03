@@ -121,9 +121,9 @@ def __detect_format(filename, data_lines, intvl):
     mm = None
     dd = None
     qq = None
-    range_ok = True # are the date values possible (month=[1,12])?
-    data_ok = True  # are the dates and data values actually numbers?
-    format_ok = True # does this file match and acceptable format?
+    range_ok = True  # are the date values possible (month=[1,12])?
+    data_ok = True   # are the dates and data values actually numbers?
+    format_ok = True # does this file match an acceptable format?
     if not data_lines: raise Exception('data_lines are empty in '+filename)
 
     if intvl == 'dy':
@@ -230,7 +230,7 @@ def __detect_format(filename, data_lines, intvl):
         #    ACCEPTED QTR-MONTHLY FORMATS
         #  CGLRRM: YYYY QQ VAL1 VAL2 ... VAL12
         #  TABLE: YYYY-MM, VAL1, VAL2, VAL3, VAL4(,)
-        #  COLUMN: YYYY-MM-QQ, VAL1(,)
+        #  COLUMN: YYYY-MM-QQ, VAL1(,);  where QQ = Q1, Q2, Q3 or Q4
         for num, line in enumerate(data_lines):
             cglrrm = False
             table = False
@@ -253,7 +253,9 @@ def __detect_format(filename, data_lines, intvl):
                     first = 1
                     yy = items[0].split('-')[0]
                     mm = items[0].split('-')[1]
-                    qq = int(items[0].split('-')[2])
+                    qs = items[0].split('-')[2]     # string, like 'Q1' or 'Q2'
+                    if qs[0].upper() != 'Q': column = False 
+                    qq = int(qs[1])                 # numeric, 1-4
 
             # ensure one and only one format was matched
             if sum([cglrrm, table, column]) != 1: format_ok = False
@@ -494,7 +496,7 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None,
     if mintvl == 'dy' or mintvl == 'wk' or mintvl == 'qm' or mintvl == 'mn':
         # beginning of what procData did (as far as I can tell)
         start = util.MISSING_DATE       # "missing" date value
-        end = util.MISSING_DATE       # "missing" date value
+        end = util.MISSING_DATE         # "missing" date value
         data_lines = []
         for line in all_lines:
             try:
@@ -514,15 +516,18 @@ def read_file(filename, kind=None, units=None, intvl=None, loc=None,
 
     if format_name == 'unknown':
         raise Exception('Format of ' + filename + ' could not be recognized')
+        
     try:
         start, end, datavals = __parse_data(filename, format_name, mintvl,
                                           data_lines, missing_value)
     except:
         raise Exception('Error calling parse_data for '+filename+';  format:'
                         +format_name+'; interval:'+mintvl)
+                        
     if not datavals:
         raise Exception('No data read in for '+filename+': format:'+format_name
                         +'; interval:'+mintvl)
+                        
     if start > end:
         raise Exception('endDate precedes startDate (likely that no dates were'
                         'recognized) for '+filename+': format:'+format_name
@@ -706,26 +711,32 @@ def __parse_data(filename, format_name, intvl, data_lines, missing_value=None):
                 datavals[ndx] = util.MISSING_REAL
 
     if intvl == 'qm':
-       #      ACCEPTED QM FORMATS
-       #  CGLRRM: YYYY QQ VAL1 VAL2 ... VAL12
-       #  TABLE: YYYY-MM, VAL1, VAL2, VAL3, VAL4(,)
-       #  COLUMN: YYYY-MM-QQ, VAL1(,)
-
-    # first loop through to get start/end dates
+        #      ACCEPTED QM FORMATS
+        #  CGLRRM: YYYY QQ VAL1 VAL2 ... VAL12
+        #  TABLE: YYYY-MM, VAL1, VAL2, VAL3, VAL4(,)
+        #  COLUMN: YYYY-MM-QQ, VAL1(,);  where QQ = Q1, Q2, Q3 or Q4
+        #  
+        #  Note that in order to simplify the creation of this dataseries,
+        #  I will first create a list of values that is padded out
+        #  to the year boundaries (Jan Q1 - Dec Q4).  Then, at the end,
+        #  I will trim it to only what was in the file, except that it 
+        #  will ALWAYS contain 4 quarters for each month, even if the
+        #  input file did not.
+        #
+        # first loop through to get start/end dates
+        # Note that these are rounded out to month start/end since the
+        # resulting dataset will always contain 4 quarters for every month.
+        #
+        # cglrrm format can NOT have partial years, so just need jan 1 and dec 31
         if format_name == 'cglrrm':
-            start_qtr = 1  # this format can NOT have partial years
+            start_qtr = 1  
             for line in data_lines:
                 items = [s.strip() for s in line.split() if s]
                 yy = int(items[0].split()[0])
-                sd = util.getQtrMonthStartEnd(year=yy, month=1, qtr=1)[0]
-                ed = util.getQtrMonthStartEnd(year=yy, month=12, qtr=4)[1]
-                d1 = dt.date(yy, 1, sd)
-                d2 = dt.date(yy, 12, ed)
+                d1 = dt.date(yy,  1,  1)
+                d2 = dt.date(yy, 12, 31)
                 start = min(start, d1)
                 end = max(end, d2)
-            nqtrs = 48*(end.year - start.year + 1)
-            datavals = [util.MISSING_REAL] * nqtrs
-
 
         if format_name == 'table':
             for line in data_lines:
@@ -734,7 +745,7 @@ def __parse_data(filename, format_name, intvl, data_lines, missing_value=None):
                 mm = int(items[0].split('-')[1])
                 sd = util.getQtrMonthStartEnd(year=yy, month=mm, qtr=1)[0]
                 ed = util.getQtrMonthStartEnd(year=yy, month=mm, qtr=4)[1]
-                d1 = dt.date(yy, mm, sd)
+                d1 = dt.date(yy, mm, 1)
                 d2 = dt.date(yy, mm, ed)
                 if d1 <= start:
                     start = d1
@@ -742,29 +753,25 @@ def __parse_data(filename, format_name, intvl, data_lines, missing_value=None):
                 if d2 >= end:
                     end = d2
                     end_mon = mm
-            nqtrs = 48*(end.year - start.year) + 4*(end_mon - start_mon + 1)
-            datavals = [util.MISSING_REAL] * nqtrs
-
 
         if format_name == 'column':
             for line in data_lines:
                 items = [s.strip() for s in line.split(',') if s]
                 yy = int(items[0].split('-')[0])
                 mm = int(items[0].split('-')[1])
-                qq = int(items[0].split('-')[2])
-                sd, ed = util.getQtrMonthStartEnd(year=yy, month=mm, qtr=qq)
-                d1 = dt.date(yy, mm, sd)
+                ed = util.days_in_month(yy, mm)
+                d1 = dt.date(yy, mm, 1)
                 d2 = dt.date(yy, mm, ed)
                 if d1 <= start:
                     start = d1
                     start_mon = mm
-                    start_qtr = qq
                 if d2 >= end:
                     end = d2
                     end_mon = mm
-                    end_qtr = qq
-            nqtrs = 48*(end.year - start.year) + 4*(end_mon - start_mon) + (end_qtr - start_qtr) + 1
-            datavals = [util.MISSING_REAL] * nqtrs
+
+        #  create a blank template list
+        nqtrs = 48*(end.year - start.year + 1)
+        tempqm = [util.MISSING_REAL] * nqtrs
 
         # now loop through to get datavals
         if format_name == 'cglrrm':
@@ -772,52 +779,54 @@ def __parse_data(filename, format_name, intvl, data_lines, missing_value=None):
                 items = [s.strip() for s in line.split() if s]
                 yy = int(items[0])
                 qq = int(items[1])
-
                 yy_delta = yy - start.year
-                qq_delta = qq - start_qtr
 
                 for i in range(2, len(items)):
-                    ndx = 48*yy_delta + qq_delta + 4*(i - 2)
+                    mm = i-1     # 1..12
+                    ndx = 48*yy_delta + 4*(mm-1) + qq-1
                     try:
-                        datavals[ndx] = float(items[i])
+                        tempqm[ndx] = float(items[i])
                     except:
-                        datavals[ndx] = util.MISSING_REAL
-
+                        tempqm[ndx] = util.MISSING_REAL
 
         if format_name == 'table':
             for line in data_lines:
                 items = [s.strip() for s in line.split(',') if s]
                 yy = int(items[0].split('-')[0])
                 mm = int(items[0].split('-')[1])
-
                 yy_delta = yy - start.year
-                mm_delta = mm - start_mon
 
                 for i in range(1,len(items)):
-                    ndx = 48*yy_delta + 4*mm_delta + (i - 1)
+                    ndx = 48*yy_delta + 4*(mm-1) + (i - 1)
                     try:
-                        datavals[ndx] = float(items[i])
+                        tempqm[ndx] = float(items[i])
                     except:
-                        datavals[ndx] = util.MISSING_REAL
+                        tempqm[ndx] = util.MISSING_REAL
 
         if format_name == 'column':
             for line in data_lines:
                 items = [s.strip() for s in line.split(',') if s]
                 yy = int(items[0].split('-')[0])
                 mm = int(items[0].split('-')[1])
-                qq = int(items[0].split('-')[2])
+                qs = items[0].split('-')[2]
+                if qs[0].upper() == 'Q':
+                    qq = int(qs[1])
+                    yy_delta = yy - start.year
 
-                yy_delta = yy - start.year
-                mm_delta = mm - start_mon
-                qq_delta = qq - start_qtr
+                    ndx = 48*yy_delta + 4*(mm-1) + qq-1
+                    try:
+                        tempqm[ndx] = float(items[1])
+                    except:
+                        tempqm[ndx] = util.MISSING_REAL
 
-                ndx = 48*yy_delta + 4*mm_delta + qq_delta
-                try:
-                    datavals[ndx] = float(items[i])
-                except:
-                    datavals[ndx] = util.MISSING_REAL
-
-
+        # now make the trimmed datavals list
+        skip_start = start.month - 1
+        skip_end = 12 - end.month
+        nqtrs_true = nqtrs - (skip_start*4) - (skip_end*4)
+        datavals = [util.MISSING_REAL] * nqtrs_true
+        for j in range(0, nqtrs_true):
+            i = skip_start + j
+            datavals[j] = tempqm[i]
 
     if intvl == 'mn':
        #      ACCEPTED MN FORMATS
@@ -1171,25 +1180,30 @@ def __write_datavals(filename, file_format, dataseries, width, prec, missing_val
             hdr = '{:>{wid}}'.format('VAL', wid=width)
             hdr_line = ','.join(['#YYYY-MM-QQ', hdr])
             f.write(hdr_line + '\n')
+            
+            numy = end.year - start.year + 1
+            skip_start = start.month - 1
+            skip_end = 12 - end.month
+            nqtrs = numy*48 - (skip_start*4) - (skip_end*4)
 
             # init date for loop
-            date = start
-            i = 0
-            q = 1  # quarter
-            while date <= end:
-                # construct line to write
-                data_line = fmt.format(vals[i])
-                date_str = '-'.join(['{:%Y-%m}'.format(date), '{:02d}'.format(q)])
-                full_line = ', '.join([date_str, data_line])
+            yy = start.year
+            mm = start.month
+            qq = 0
+            for i in range(0, nqtrs):
+                qq = qq + 1
+                if qq==5: 
+                    qq = 1
+                    mm = mm + 1
+                    if mm==13:
+                        mm = 1
+                        yy = yy + 1
+                dstr = '{:04d}'.format(yy) + '-' +    \
+                       '{:02d}'.format(mm) + '-Q' +    \
+                       '{:1d}'.format(qq) 
+                vstr = fmt.format(vals[i])
+                full_line = ', '.join([dstr, vstr])
                 f.write(full_line + '\n')
-
-                # update
-                i = i + 1
-                q = q + 1
-                if i % 4 is 0:
-                    q = 1
-                    dom = util.days_in_month(date.year, date.month)
-                    date = date + dt.timedelta(days=dom)
 
 
     if intvl == 'mn':
